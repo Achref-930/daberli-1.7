@@ -665,12 +665,6 @@ const PostAdModal: React.FC<PostAdModalProps> = ({ isOpen, onClose, onSubmit }) 
     return () => clearTimeout(t);
   }, [isOpen, base, autoD, reD, jobD, svcD]);
 
-  // ── Blob URL cleanup ─────────────────────────────────────────────────────
-  useEffect(() => {
-    const url = base.image;
-    return () => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); };
-  }, [base.image]);
-
   // ── Clear step error when user changes step or fixes inputs ───────────────
   useEffect(() => { setStepError(null); }, [step, base, svcD]);
 
@@ -683,10 +677,9 @@ const PostAdModal: React.FC<PostAdModalProps> = ({ isOpen, onClose, onSubmit }) 
   }, [isOpen]);
 
   const reset = useCallback(() => {
-    if (base.image.startsWith('blob:')) URL.revokeObjectURL(base.image);
     setBase(INIT_BASE); setAutoD(INIT_AUTO); setReD(INIT_RE); setJobD(INIT_JOB); setSvcD(INIT_SVC);
-    setStep(1); setIsLoading(false); setIsSuccess(false);
-  }, [base.image]);
+    setStep(1); setIsLoading(false); setIsSuccess(false); setStepError(null);
+  }, []);
 
   const handleClose = () => { onClose(); setTimeout(reset, 300); };
 
@@ -698,12 +691,15 @@ const PostAdModal: React.FC<PostAdModalProps> = ({ isOpen, onClose, onSubmit }) 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (base.image.startsWith('blob:')) URL.revokeObjectURL(base.image);
-    setBase(prev => ({ ...prev, image: URL.createObjectURL(file) }));
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setBase(prev => ({ ...prev, image: ev.target?.result as string }));
+    };
+    reader.readAsDataURL(file);
+    e.target.value = ''; // allow re-selecting the same file
   };
 
   const handleImageClear = () => {
-    if (base.image.startsWith('blob:')) URL.revokeObjectURL(base.image);
     setBase(prev => ({ ...prev, image: '' }));
   };
 
