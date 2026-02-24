@@ -592,12 +592,44 @@ const DRAFT_KEY = 'daberli_post_draft_v2';
 
 const STEP_LABELS: Record<Step, string> = { 1: 'Category', 2: 'Basic Info', 3: 'Details', 4: 'Photo & Submit' };
 
+// ─── Step Validation (single source of truth) ─────────────────────────────────
+
+type StepError = string | null;
+
+const validateStep = (
+  step: Step,
+  base: BaseForm,
+  svcD: ServiceDetails
+): StepError => {
+  switch (step) {
+    case 1:
+      return null; // category is always selected
+    case 2:
+      if (!base.title.trim()) return 'Please enter a title for your ad.';
+      if (!base.location)     return 'Please select a wilaya.';
+      return null;
+    case 3:
+      if (base.category === 'services' && !svcD.specialty.trim())
+        return 'Please enter your specialty.';
+      return null;
+    case 4:
+      if (!base.image)
+        return 'A cover image is required — it helps your ad stand out.';
+      if ((base.category === 'jobs' || base.category === 'services') && !base.description.trim())
+        return 'Please add a description for this type of listing.';
+      return null;
+    default:
+      return null;
+  }
+};
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 const PostAdModal: React.FC<PostAdModalProps> = ({ isOpen, onClose, onSubmit }) => {
   const [step, setStep] = useState<Step>(1);
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [stepError, setStepError] = useState<StepError>(null);
 
   const [base, setBase] = useState<BaseForm>(INIT_BASE);
   const [autoD, setAutoD] = useState<AutoDetails>(INIT_AUTO);
@@ -639,6 +671,9 @@ const PostAdModal: React.FC<PostAdModalProps> = ({ isOpen, onClose, onSubmit }) 
     return () => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); };
   }, [base.image]);
 
+  // ── Clear step error when user changes step or fixes inputs ───────────────
+  useEffect(() => { setStepError(null); }, [step, base, svcD]);
+
   // ── Escape key ───────────────────────────────────────────────────────────
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
@@ -672,9 +707,13 @@ const PostAdModal: React.FC<PostAdModalProps> = ({ isOpen, onClose, onSubmit }) 
     setBase(prev => ({ ...prev, image: '' }));
   };
 
-  const canProceed = () => {
-    if (step === 2) return base.title.trim().length > 0 && base.location !== '';
-    return true;
+  const canProceed = (): boolean => validateStep(step, base, svcD) === null;
+
+  const handleNext = () => {
+    const error = validateStep(step, base, svcD);
+    if (error) { setStepError(error); return; }
+    setStepError(null);
+    setStep(prev => (prev + 1) as Step);
   };
 
   const buildDetails = () => {
@@ -688,8 +727,11 @@ const PostAdModal: React.FC<PostAdModalProps> = ({ isOpen, onClose, onSubmit }) 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!base.title.trim() || !base.location) { setStep(2); return; }
-    if (base.category === 'services' && !svcD.specialty.trim()) { setStep(3); return; }
+    // Guard every step before submit — future-proof: adding a new step only requires updating validateStep
+    for (let s = 1; s <= 4; s++) {
+      const error = validateStep(s as Step, base, svcD);
+      if (error) { setStep(s as Step); setStepError(error); return; }
+    }
     setIsLoading(true);
     setTimeout(() => {
       onSubmit({
@@ -698,7 +740,7 @@ const PostAdModal: React.FC<PostAdModalProps> = ({ isOpen, onClose, onSubmit }) 
         price: Number(base.price) || 0,
         currency: base.priceUnit,
         location: base.location,
-        image: base.image || 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&q=80',
+        image: base.image, // required — no silent fallback
         details: buildDetails(),
         datePosted: 'Just now',
       });
@@ -817,6 +859,14 @@ const PostAdModal: React.FC<PostAdModalProps> = ({ isOpen, onClose, onSubmit }) 
                       onImageClear={handleImageClear}
                     />
                   )}
+
+                  {/* ── Step error banner ──────────────────────────────── */}
+                  {stepError && (
+                    <div className="mt-4 flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-xs font-medium px-3 py-2.5 rounded-xl">
+                      <X className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      {stepError}
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -842,7 +892,7 @@ const PostAdModal: React.FC<PostAdModalProps> = ({ isOpen, onClose, onSubmit }) 
                 {step < 4 ? (
                   <button
                     type="button"
-                    onClick={() => setStep(prev => (prev + 1) as Step)}
+                    onClick={handleNext}
                     disabled={!canProceed()}
                     className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white transition-colors
                       disabled:opacity-40 disabled:cursor-not-allowed ${cfg.btn}`}
@@ -852,7 +902,7 @@ const PostAdModal: React.FC<PostAdModalProps> = ({ isOpen, onClose, onSubmit }) 
                 ) : (
                   <button
                     type="submit"
-                    disabled={isLoading || !base.title.trim() || !base.location}
+                    disabled={isLoading || !canProceed()}
                     className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white transition-colors
                       disabled:opacity-40 disabled:cursor-not-allowed ${cfg.btn}`}
                   >
