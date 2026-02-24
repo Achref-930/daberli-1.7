@@ -18,9 +18,11 @@ import {
   Image as ImageIcon,
   Loader2,
   MapPin,
+  Maximize2,
   Palette,
   Phone,
   Square,
+  Star,
   Tag,
   Type,
   Wrench,
@@ -187,7 +189,7 @@ const StepCategory: React.FC<{
 interface BaseForm {
   title: string; category: Category;
   price: string; priceUnit: string;
-  location: string; image: string; description: string;
+  location: string; images: string[]; description: string;
 }
 
 const StepBasic: React.FC<{
@@ -476,14 +478,87 @@ const StepServiceDetails: React.FC<{
 
 // ─── Step 4 — Photo & Description ────────────────────────────────────────────
 
+const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_FILE_MB = 10;
+const MAX_IMAGES = 6;
+
 const StepPhoto: React.FC<{
   base: BaseForm;
   onDescChange: (v: string) => void;
-  onImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onImageClear: () => void;
-}> = ({ base, onDescChange, onImageUpload, onImageClear }) => {
+  onImagesChange: (updater: (prev: string[]) => string[]) => void;
+}> = ({ base, onDescChange, onImagesChange }) => {
   const fileRef = useRef<HTMLInputElement>(null);
+  const [lightbox, setLightbox] = useState<number | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
   const cfg = CATEGORY_CONFIG[base.category];
+
+  // Lightbox keyboard navigation — capture phase so Escape doesn't also close the modal
+  useEffect(() => {
+    if (lightbox === null) return;
+    const h = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopImmediatePropagation();
+        setLightbox(null);
+      }
+      if (e.key === 'ArrowLeft')
+        setLightbox(i => (i !== null && i > 0 ? i - 1 : base.images.length - 1));
+      if (e.key === 'ArrowRight')
+        setLightbox(i => (i !== null ? (i + 1) % base.images.length : 0));
+    };
+    window.addEventListener('keydown', h, true);
+    return () => window.removeEventListener('keydown', h, true);
+  }, [lightbox, base.images.length]);
+
+  const processFiles = (files: FileList | File[]) => {
+    setFileError(null);
+    const arr = Array.from(files);
+    const remaining = MAX_IMAGES - base.images.length;
+    if (remaining <= 0) { setFileError(`Maximum ${MAX_IMAGES} photos already reached.`); return; }
+    const toProcess = arr.slice(0, remaining);
+    if (arr.length > remaining)
+      setFileError(`Only the first ${remaining} photo(s) were added — maximum reached.`);
+    toProcess.forEach(file => {
+      if (!ACCEPTED_TYPES.includes(file.type)) {
+        setFileError('Only JPG, PNG, and WEBP images are accepted.');
+        return;
+      }
+      if (file.size > MAX_FILE_MB * 1024 * 1024) {
+        setFileError(`"${file.name}" exceeds the ${MAX_FILE_MB} MB limit.`);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        onImagesChange(prev => [...prev, ev.target?.result as string]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) processFiles(e.target.files);
+    e.target.value = '';
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    processFiles(e.dataTransfer.files);
+  };
+
+  const handleRemove = (idx: number) => {
+    onImagesChange(prev => prev.filter((_, i) => i !== idx));
+    setLightbox(null);
+  };
+
+  const handleSetCover = (idx: number) => {
+    onImagesChange(prev => {
+      const next = [...prev];
+      const [item] = next.splice(idx, 1);
+      next.unshift(item);
+      return next;
+    });
+  };
 
   return (
     <div className="space-y-5">
@@ -501,45 +576,113 @@ const StepPhoto: React.FC<{
         </div>
       </div>
 
-      {/* Image upload */}
-      <FieldWrapper label="Cover Image" icon={<ImageIcon className="w-4 h-4" />} hint="JPG · PNG · WEBP — max 10 MB">
-        {base.image ? (
-          <div className="relative rounded-xl overflow-hidden bg-gray-100 group aspect-video">
-            <img
-              src={base.image}
-              alt="Preview"
-              className="w-full h-full object-cover"
-              onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/600x360?text=Preview'; }}
-            />
-            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-              <button
-                type="button"
-                onClick={onImageClear}
-                className="flex items-center gap-1 bg-white text-gray-800 text-xs font-semibold px-3 py-1.5 rounded-full shadow"
+      {/* Photos */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <label className="flex items-center gap-1.5 text-sm font-semibold text-gray-700">
+            <ImageIcon className="w-4 h-4" />
+            Photos <span className="text-red-400">*</span>
+          </label>
+          <span className="text-xs text-gray-400 font-medium">{base.images.length} / {MAX_IMAGES}</span>
+        </div>
+
+        {/* Image grid */}
+        {base.images.length > 0 && (
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            {base.images.map((img, idx) => (
+              <div
+                key={idx}
+                className="relative group aspect-video rounded-xl overflow-hidden bg-gray-100 cursor-zoom-in"
+                onClick={() => setLightbox(idx)}
               >
-                <X className="w-3 h-3" /> Remove
-              </button>
-            </div>
+                {/* Image with subtle zoom */}
+                <img
+                  src={img}
+                  alt={`Photo ${idx + 1}`}
+                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/300x180?text=Photo'; }}
+                />
+
+                {/* Dim overlay */}
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity" />
+
+                {/* Position badge — always visible, top-left */}
+                <span className={`absolute top-1.5 left-1.5 flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-md tracking-wide pointer-events-none
+                  ${idx === 0 ? 'bg-amber-400 text-amber-900' : 'bg-black/55 text-white'}`}>
+                  {idx === 0
+                    ? <><Star className="w-2.5 h-2.5 fill-current" />&nbsp;Cover</>
+                    : `${idx + 1}`}
+                </span>
+
+                {/* Remove — top-right, icon only, turns red on hover */}
+                <button
+                  type="button"
+                  aria-label="Remove photo"
+                  onClick={(e) => { e.stopPropagation(); handleRemove(idx); }}
+                  className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/50 text-white
+                    opacity-0 group-hover:opacity-100 hover:bg-red-500 transition-all duration-150 z-10"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+
+                {/* Center zoom hint */}
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                  <div className="p-2 rounded-full bg-white/20 backdrop-blur-sm">
+                    <Maximize2 className="w-4 h-4 text-white drop-shadow" />
+                  </div>
+                </div>
+
+                {/* Set as Cover — bottom pill, only on non-cover images */}
+                {idx !== 0 && (
+                  <button
+                    type="button"
+                    aria-label="Set as cover photo"
+                    onClick={(e) => { e.stopPropagation(); handleSetCover(idx); }}
+                    className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex items-center gap-1
+                      bg-black/60 hover:bg-amber-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full
+                      opacity-0 group-hover:opacity-100 transition-all duration-150 whitespace-nowrap z-10"
+                  >
+                    <Star className="w-2.5 h-2.5" />&nbsp;Set as Cover
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            className="w-full border-2 border-dashed border-gray-300 rounded-xl py-10 flex flex-col items-center gap-2 text-gray-400 hover:border-blue-400 hover:text-blue-500 transition-colors"
-          >
-            <ImageIcon className="w-8 h-8" />
-            <span className="text-sm font-medium">Click to upload a photo</span>
-            <span className="text-xs">or drag and drop</span>
-          </button>
         )}
+
+        {/* Drop zone */}
+        {base.images.length < MAX_IMAGES && (
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
+            onClick={() => fileRef.current?.click()}
+            className={`w-full border-2 border-dashed rounded-xl py-8 flex flex-col items-center gap-2 cursor-pointer select-none transition-colors
+              ${dragOver ? 'border-blue-400 bg-blue-50 text-blue-500' : 'border-gray-300 text-gray-400 hover:border-blue-400 hover:text-blue-500'}`}
+          >
+            <ImageIcon className="w-7 h-7" />
+            <span className="text-sm font-medium">
+              {base.images.length === 0 ? 'Click or drag & drop photos here' : 'Add more photos'}
+            </span>
+            <span className="text-xs">JPG · PNG · WEBP — max {MAX_FILE_MB} MB each</span>
+          </div>
+        )}
+
         <input
           ref={fileRef}
           type="file"
-          accept="image/*"
+          accept="image/jpeg,image/png,image/webp"
+          multiple
           className="hidden"
-          onChange={onImageUpload}
+          onChange={handleInputChange}
         />
-      </FieldWrapper>
+
+        {fileError && (
+          <div className="mt-2 flex items-center gap-1.5 text-red-600 text-xs font-medium">
+            <X className="w-3.5 h-3.5 shrink-0" /> {fileError}
+          </div>
+        )}
+      </div>
 
       {/* Description */}
       <div>
@@ -573,6 +716,65 @@ const StepPhoto: React.FC<{
           <p className="mt-1 text-xs text-gray-400 text-right">{base.description.length} / 1000</p>
         </div>
       </div>
+
+      {/* Lightbox */}
+      {lightbox !== null && base.images[lightbox] && (
+        <div
+          className="fixed inset-0 z-[200] bg-black/92 flex items-center justify-center"
+          onClick={() => setLightbox(null)}
+        >
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setLightbox(null); }}
+            className="absolute top-4 right-4 p-2 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors z-10"
+            aria-label="Close preview"
+          >
+            <X className="w-5 h-5" />
+          </button>
+
+          {base.images.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setLightbox(i => (i !== null && i > 0 ? i - 1 : base.images.length - 1)); }}
+                className="absolute left-4 p-2 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors z-10"
+                aria-label="Previous photo"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setLightbox(i => (i !== null ? (i + 1) % base.images.length : 0)); }}
+                className="absolute right-4 p-2 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors z-10"
+                aria-label="Next photo"
+              >
+                <ArrowRight className="w-5 h-5" />
+              </button>
+            </>
+          )}
+
+          <img
+            src={base.images[lightbox]}
+            alt={`Photo ${lightbox + 1}`}
+            className="max-w-[90vw] max-h-[85vh] rounded-xl object-contain shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+
+          {base.images.length > 1 && (
+            <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-2">
+              {base.images.map((_, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setLightbox(i); }}
+                  className={`w-2 h-2 rounded-full transition-colors ${i === lightbox ? 'bg-white' : 'bg-white/40 hover:bg-white/70'}`}
+                  aria-label={`Go to photo ${i + 1}`}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
@@ -581,7 +783,7 @@ const StepPhoto: React.FC<{
 
 const INIT_BASE: BaseForm = {
   title: '', category: 'auto', price: '', priceUnit: 'DZD',
-  location: '', image: '', description: '',
+  location: '', images: [], description: '',
 };
 const INIT_AUTO: AutoDetails = { brand: '', model: '', year: '', mileage: '', fuelType: '', transmission: '', color: '', condition: '' };
 const INIT_RE: RealEstateDetails = { type: '', area: '', bedrooms: '', bathrooms: '', floor: '', furnished: '' };
@@ -613,8 +815,8 @@ const validateStep = (
         return 'Please enter your specialty.';
       return null;
     case 4:
-      if (!base.image)
-        return 'A cover image is required — it helps your ad stand out.';
+      if (base.images.length === 0)
+        return 'At least one photo is required — it helps your ad stand out.';
       if ((base.category === 'jobs' || base.category === 'services') && !base.description.trim())
         return 'Please add a description for this type of listing.';
       return null;
@@ -644,7 +846,7 @@ const PostAdModal: React.FC<PostAdModalProps> = ({ isOpen, onClose, onSubmit }) 
       const raw = localStorage.getItem(DRAFT_KEY);
       if (!raw) return;
       const { b, a, re, j, s } = JSON.parse(raw);
-      if (b) setBase({ ...INIT_BASE, ...b, image: '' });
+      if (b) setBase({ ...INIT_BASE, ...b, images: [] });
       if (a) setAutoD({ ...INIT_AUTO, ...a });
       if (re) setReD({ ...INIT_RE, ...re });
       if (j) setJobD({ ...INIT_JOB, ...j });
@@ -658,7 +860,7 @@ const PostAdModal: React.FC<PostAdModalProps> = ({ isOpen, onClose, onSubmit }) 
     const t = setTimeout(() => {
       try {
         localStorage.setItem(DRAFT_KEY, JSON.stringify({
-          b: { ...base, image: '' }, a: autoD, re: reD, j: jobD, s: svcD,
+          b: { ...base, images: [] }, a: autoD, re: reD, j: jobD, s: svcD,
         }));
       } catch {/* ignore */ }
     }, 800);
@@ -688,19 +890,8 @@ const PostAdModal: React.FC<PostAdModalProps> = ({ isOpen, onClose, onSubmit }) 
     setBase(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      setBase(prev => ({ ...prev, image: ev.target?.result as string }));
-    };
-    reader.readAsDataURL(file);
-    e.target.value = ''; // allow re-selecting the same file
-  };
-
-  const handleImageClear = () => {
-    setBase(prev => ({ ...prev, image: '' }));
+  const handleImagesChange = (updater: (prev: string[]) => string[]) => {
+    setBase(prev => ({ ...prev, images: updater(prev.images) }));
   };
 
   const canProceed = (): boolean => validateStep(step, base, svcD) === null;
@@ -736,7 +927,7 @@ const PostAdModal: React.FC<PostAdModalProps> = ({ isOpen, onClose, onSubmit }) 
         price: Number(base.price) || 0,
         currency: base.priceUnit,
         location: base.location,
-        image: base.image, // required — no silent fallback
+        image: base.images[0], // cover = first photo
         details: buildDetails(),
         datePosted: 'Just now',
       });
@@ -816,10 +1007,16 @@ const PostAdModal: React.FC<PostAdModalProps> = ({ isOpen, onClose, onSubmit }) 
                       Your listing is now live and visible to everyone on Daberli.
                     </p>
                   </div>
+                  {base.images[0] && (
+                    <div className="w-full rounded-xl overflow-hidden aspect-video bg-gray-100">
+                      <img src={base.images[0]} alt="Cover" className="w-full h-full object-cover" />
+                    </div>
+                  )}
                   <div className={`w-full ${cfg.bg} border ${cfg.border} rounded-xl px-4 py-3 text-sm text-left`}>
                     <p className={`font-semibold ${cfg.text}`}>{base.title || 'Your listing'}</p>
                     <p className="text-gray-500 text-xs mt-0.5">
                       {base.location} · {base.price ? `${Number(base.price).toLocaleString()} ${base.priceUnit}` : 'Price not set'}
+                      {base.images.length > 1 && ` · ${base.images.length} photos`}
                     </p>
                   </div>
                   <button
@@ -851,8 +1048,7 @@ const PostAdModal: React.FC<PostAdModalProps> = ({ isOpen, onClose, onSubmit }) 
                     <StepPhoto
                       base={base}
                       onDescChange={v => setBase(prev => ({ ...prev, description: v }))}
-                      onImageUpload={handleImageUpload}
-                      onImageClear={handleImageClear}
+                      onImagesChange={handleImagesChange}
                     />
                   )}
 
