@@ -1,0 +1,880 @@
+import {
+  AlignLeft,
+  ArrowLeft,
+  ArrowRight,
+  Bath,
+  BedDouble,
+  Briefcase,
+  Building2,
+  Calendar,
+  Car,
+  CheckCircle,
+  ChevronDown,
+  Clock,
+  DollarSign,
+  Fuel,
+  Gauge,
+  Home,
+  Image as ImageIcon,
+  Loader2,
+  MapPin,
+  Palette,
+  Phone,
+  Square,
+  Tag,
+  Type,
+  Wrench,
+  X,
+  Zap,
+} from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { WILAYAS } from '../constants';
+import { Category } from '../types';
+
+// ─── Props ────────────────────────────────────────────────────────────────────
+
+interface PostAdModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSubmit: (adData: any) => void;
+}
+
+type Step = 1 | 2 | 3 | 4;
+
+// ─── Detail shapes ────────────────────────────────────────────────────────────
+
+interface AutoDetails {
+  brand: string; model: string; year: string; mileage: string;
+  fuelType: string; transmission: string; color: string; condition: string;
+}
+interface RealEstateDetails {
+  type: string; area: string; bedrooms: string; bathrooms: string;
+  floor: string; furnished: string;
+}
+interface JobDetails {
+  company: string; jobType: string; experience: string;
+  remote: string; sector: string;
+}
+interface ServiceDetails {
+  specialty: string; rateType: string; yearsExp: string; availability: string;
+}
+
+// ─── Category theme config ────────────────────────────────────────────────────
+
+const CATEGORY_CONFIG = {
+  auto: {
+    label: 'Vehicles',
+    subtitle: 'Cars, motorbikes, trucks & more',
+    icon: <Car className="w-7 h-7" />,
+    iconSm: <Car className="w-3.5 h-3.5" />,
+    border: 'border-red-500',
+    bg: 'bg-red-50',
+    text: 'text-red-600',
+    ring: 'ring-red-400',
+    btn: 'bg-red-600 hover:bg-red-700',
+    badge: 'bg-red-100 text-red-700',
+    bar: 'bg-red-500',
+  },
+  'real-estate': {
+    label: 'Real Estate',
+    subtitle: 'Apartments, villas, land & offices',
+    icon: <Home className="w-7 h-7" />,
+    iconSm: <Home className="w-3.5 h-3.5" />,
+    border: 'border-emerald-500',
+    bg: 'bg-emerald-50',
+    text: 'text-emerald-600',
+    ring: 'ring-emerald-400',
+    btn: 'bg-emerald-600 hover:bg-emerald-700',
+    badge: 'bg-emerald-100 text-emerald-700',
+    bar: 'bg-emerald-500',
+  },
+  jobs: {
+    label: 'Jobs',
+    subtitle: 'Full-time, freelance, internships',
+    icon: <Briefcase className="w-7 h-7" />,
+    iconSm: <Briefcase className="w-3.5 h-3.5" />,
+    border: 'border-blue-500',
+    bg: 'bg-blue-50',
+    text: 'text-blue-600',
+    ring: 'ring-blue-400',
+    btn: 'bg-blue-600 hover:bg-blue-700',
+    badge: 'bg-blue-100 text-blue-700',
+    bar: 'bg-blue-500',
+  },
+  services: {
+    label: 'Services',
+    subtitle: 'Repairs, tutoring, design & more',
+    icon: <Wrench className="w-7 h-7" />,
+    iconSm: <Wrench className="w-3.5 h-3.5" />,
+    border: 'border-violet-500',
+    bg: 'bg-violet-50',
+    text: 'text-violet-600',
+    ring: 'ring-violet-400',
+    btn: 'bg-violet-600 hover:bg-violet-700',
+    badge: 'bg-violet-100 text-violet-700',
+    bar: 'bg-violet-500',
+  },
+} as const;
+
+// ─── Small reusable pieces ────────────────────────────────────────────────────
+
+const FieldWrapper: React.FC<{
+  label: string;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+  hint?: string;
+}> = ({ label, icon, children, hint }) => (
+  <div>
+    <label className="block text-sm font-semibold text-gray-700 mb-1.5">{label}</label>
+    <div className="relative">
+      {icon && (
+        <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+          {icon}
+        </span>
+      )}
+      {children}
+    </div>
+    {hint && <p className="mt-1 text-xs text-gray-400">{hint}</p>}
+  </div>
+);
+
+const inputCls = (hasIcon = true) =>
+  `block w-full ${hasIcon ? 'pl-10' : 'px-3'} pr-3 py-2.5 border border-gray-200 rounded-xl
+   text-gray-900 placeholder-gray-400 text-sm bg-white
+   focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 transition-all`;
+
+const selectCls = (hasIcon = true) => `${inputCls(hasIcon)} appearance-none cursor-pointer`;
+
+const DownIcon = () => (
+  <span className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-gray-400">
+    <ChevronDown className="w-4 h-4" />
+  </span>
+);
+
+// ─── Step 1 — Category Picker ─────────────────────────────────────────────────
+
+const StepCategory: React.FC<{
+  selected: Category;
+  onSelect: (c: Category) => void;
+}> = ({ selected, onSelect }) => (
+  <div className="space-y-3">
+    <p className="text-sm text-gray-500 mb-1">What are you listing?</p>
+    <div className="grid grid-cols-2 gap-3">
+      {(Object.entries(CATEGORY_CONFIG) as [Category, typeof CATEGORY_CONFIG[Category]][]).map(([cat, cfg]) => {
+        const active = selected === cat;
+        return (
+          <button
+            key={cat}
+            type="button"
+            onClick={() => onSelect(cat)}
+            className={`flex flex-col items-start gap-3 p-4 rounded-2xl border-2 text-left transition-all duration-200 focus:outline-none focus-visible:ring-2 ${cfg.ring}
+              ${active ? `${cfg.border} ${cfg.bg} ring-2 ${cfg.ring} ring-offset-1` : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'}`}
+          >
+            <span className={active ? cfg.text : 'text-gray-400'}>{cfg.icon}</span>
+            <span>
+              <p className={`font-bold text-sm ${active ? cfg.text : 'text-gray-800'}`}>{cfg.label}</p>
+              <p className="text-xs text-gray-400 mt-0.5 leading-snug">{cfg.subtitle}</p>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  </div>
+);
+
+// ─── Step 2 — Basic Info ──────────────────────────────────────────────────────
+
+interface BaseForm {
+  title: string; category: Category;
+  price: string; priceUnit: string;
+  location: string; image: string; description: string;
+}
+
+const StepBasic: React.FC<{
+  data: BaseForm;
+  onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
+}> = ({ data, onChange }) => {
+  const cfg = CATEGORY_CONFIG[data.category];
+  const placeholder = {
+    auto: 'e.g., Renault Clio 4 GT Line 2019',
+    'real-estate': 'e.g., Bright 3-room apartment in Hydra',
+    jobs: 'e.g., Senior Full-Stack Developer',
+    services: 'e.g., Professional Plumbing & Pipe Repair',
+  }[data.category];
+
+  return (
+    <div className="space-y-4">
+      {/* Category badge */}
+      <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${cfg.badge}`}>
+        {cfg.iconSm}{cfg.label}
+      </div>
+
+      {/* Title */}
+      <FieldWrapper label="Ad Title *" icon={<Type className="w-4 h-4" />}>
+        <input
+          autoFocus
+          type="text"
+          name="title"
+          required
+          value={data.title}
+          onChange={onChange}
+          placeholder={placeholder}
+          className={inputCls()}
+        />
+      </FieldWrapper>
+
+      {/* Wilaya */}
+      <FieldWrapper label="Wilaya *" icon={<MapPin className="w-4 h-4" />}>
+        <select name="location" required value={data.location} onChange={onChange} className={selectCls()}>
+          <option value="">Choose wilaya</option>
+          {WILAYAS.map((w) => (
+            <option key={w.code} value={w.name}>{w.code} — {w.name}</option>
+          ))}
+        </select>
+        <DownIcon />
+      </FieldWrapper>
+
+      {/* Price + unit */}
+      <div className="grid grid-cols-2 gap-3">
+        <FieldWrapper label="Price (DZD)" icon={<DollarSign className="w-4 h-4" />}>
+          <input
+            type="number"
+            name="price"
+            min="0"
+            value={data.price}
+            onChange={onChange}
+            placeholder="0"
+            className={inputCls()}
+          />
+        </FieldWrapper>
+        <FieldWrapper label="Pricing type">
+          <select name="priceUnit" value={data.priceUnit} onChange={onChange} className={selectCls(false)}>
+            <option value="DZD">DZD — Fixed</option>
+            <option value="Negotiable">Negotiable</option>
+            <option value="DZD/month">DZD / month</option>
+            <option value="DZD/day">DZD / day</option>
+            <option value="DZD/hour">DZD / hour</option>
+          </select>
+          <DownIcon />
+        </FieldWrapper>
+      </div>
+    </div>
+  );
+};
+
+// ─── Step 3 — Category-specific details ──────────────────────────────────────
+
+const StepAutoDetails: React.FC<{
+  d: AutoDetails;
+  set: (k: keyof AutoDetails, v: string) => void;
+}> = ({ d, set }) => {
+  const ch = (k: keyof AutoDetails) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => set(k, e.target.value);
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <FieldWrapper label="Brand" icon={<Car className="w-4 h-4" />}>
+          <select value={d.brand} onChange={ch('brand')} className={selectCls()}>
+            <option value="">Select brand</option>
+            {['Renault','Peugeot','Citroën','Volkswagen','Toyota','Hyundai','Kia','Dacia','BMW','Mercedes-Benz','Audi','Ford','Fiat','Opel','Seat','Skoda','Suzuki','Nissan','Honda','Mitsubishi','Mazda','Other'].map(b => <option key={b}>{b}</option>)}
+          </select>
+          <DownIcon />
+        </FieldWrapper>
+        <FieldWrapper label="Model" icon={<Tag className="w-4 h-4" />}>
+          <input value={d.model} onChange={ch('model')} placeholder="e.g., Clio 4" className={inputCls()} />
+        </FieldWrapper>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <FieldWrapper label="Year" icon={<Calendar className="w-4 h-4" />}>
+          <select value={d.year} onChange={ch('year')} className={selectCls()}>
+            <option value="">Year</option>
+            {Array.from({ length: 37 }, (_, i) => 2026 - i).map(y => <option key={y}>{y}</option>)}
+          </select>
+          <DownIcon />
+        </FieldWrapper>
+        <FieldWrapper label="Mileage (km)" icon={<Gauge className="w-4 h-4" />}>
+          <input type="number" min="0" value={d.mileage} onChange={ch('mileage')} placeholder="e.g., 45 000" className={inputCls()} />
+        </FieldWrapper>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <FieldWrapper label="Fuel type" icon={<Fuel className="w-4 h-4" />}>
+          <select value={d.fuelType} onChange={ch('fuelType')} className={selectCls()}>
+            <option value="">Select</option>
+            {['Essence','Gasoil','GPL','Électrique','Hybride'].map(f => <option key={f}>{f}</option>)}
+          </select>
+          <DownIcon />
+        </FieldWrapper>
+        <FieldWrapper label="Transmission" icon={<Zap className="w-4 h-4" />}>
+          <select value={d.transmission} onChange={ch('transmission')} className={selectCls()}>
+            <option value="">Select</option>
+            <option>Manual</option>
+            <option>Automatic</option>
+          </select>
+          <DownIcon />
+        </FieldWrapper>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <FieldWrapper label="Color" icon={<Palette className="w-4 h-4" />}>
+          <input value={d.color} onChange={ch('color')} placeholder="e.g., White" className={inputCls()} />
+        </FieldWrapper>
+        <FieldWrapper label="Condition" icon={<CheckCircle className="w-4 h-4" />}>
+          <select value={d.condition} onChange={ch('condition')} className={selectCls()}>
+            <option value="">Select</option>
+            {['Neuf','Excellent état','Bon état','État correct','À réviser'].map(c => <option key={c}>{c}</option>)}
+          </select>
+          <DownIcon />
+        </FieldWrapper>
+      </div>
+    </div>
+  );
+};
+
+const StepRealEstateDetails: React.FC<{
+  d: RealEstateDetails;
+  set: (k: keyof RealEstateDetails, v: string) => void;
+}> = ({ d, set }) => {
+  const ch = (k: keyof RealEstateDetails) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => set(k, e.target.value);
+  return (
+    <div className="space-y-4">
+      <FieldWrapper label="Property type" icon={<Home className="w-4 h-4" />}>
+        <select value={d.type} onChange={ch('type')} className={selectCls()}>
+          <option value="">Select type</option>
+          {['Appartement','Villa','Studio','Bureau','Local commercial','Terrain','Maison','Duplex','Penthouse'].map(t => <option key={t}>{t}</option>)}
+        </select>
+        <DownIcon />
+      </FieldWrapper>
+
+      <div className="grid grid-cols-3 gap-3">
+        <FieldWrapper label="Area (m²)" icon={<Square className="w-4 h-4" />}>
+          <input type="number" min="1" value={d.area} onChange={ch('area')} placeholder="m²" className={inputCls()} />
+        </FieldWrapper>
+        <FieldWrapper label="Bedrooms" icon={<BedDouble className="w-4 h-4" />}>
+          <select value={d.bedrooms} onChange={ch('bedrooms')} className={selectCls()}>
+            <option value="">—</option>
+            {['Studio','1','2','3','4','5','6+'].map(n => <option key={n}>{n}</option>)}
+          </select>
+          <DownIcon />
+        </FieldWrapper>
+        <FieldWrapper label="Bathrooms" icon={<Bath className="w-4 h-4" />}>
+          <select value={d.bathrooms} onChange={ch('bathrooms')} className={selectCls()}>
+            <option value="">—</option>
+            {['1','2','3','4+'].map(n => <option key={n}>{n}</option>)}
+          </select>
+          <DownIcon />
+        </FieldWrapper>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <FieldWrapper label="Floor" icon={<Building2 className="w-4 h-4" />}>
+          <select value={d.floor} onChange={ch('floor')} className={selectCls()}>
+            <option value="">Select</option>
+            {['Rez-de-chaussée','1er étage','2ème étage','3ème étage','4ème étage','5ème étage','6ème+ étage','Dernier étage'].map(f => <option key={f}>{f}</option>)}
+          </select>
+          <DownIcon />
+        </FieldWrapper>
+        <FieldWrapper label="Furnished" icon={<CheckCircle className="w-4 h-4" />}>
+          <select value={d.furnished} onChange={ch('furnished')} className={selectCls()}>
+            <option value="">Select</option>
+            <option value="yes">✓ Furnished</option>
+            <option value="no">✗ Unfurnished</option>
+            <option value="partial">⟳ Partially</option>
+          </select>
+          <DownIcon />
+        </FieldWrapper>
+      </div>
+    </div>
+  );
+};
+
+const StepJobDetails: React.FC<{
+  d: JobDetails;
+  set: (k: keyof JobDetails, v: string) => void;
+}> = ({ d, set }) => {
+  const ch = (k: keyof JobDetails) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => set(k, e.target.value);
+  return (
+    <div className="space-y-4">
+      <FieldWrapper label="Company name" icon={<Building2 className="w-4 h-4" />}>
+        <input value={d.company} onChange={ch('company')} placeholder="e.g., Sonatrach, Ooredoo, Freelance" className={inputCls()} />
+      </FieldWrapper>
+      <div className="grid grid-cols-2 gap-3">
+        <FieldWrapper label="Contract type" icon={<Briefcase className="w-4 h-4" />}>
+          <select value={d.jobType} onChange={ch('jobType')} className={selectCls()}>
+            <option value="">Select</option>
+            {['CDI','CDD','Freelance','Stage','Intérim','Temps partiel'].map(t => <option key={t}>{t}</option>)}
+          </select>
+          <DownIcon />
+        </FieldWrapper>
+        <FieldWrapper label="Work mode" icon={<MapPin className="w-4 h-4" />}>
+          <select value={d.remote} onChange={ch('remote')} className={selectCls()}>
+            <option value="">Select</option>
+            {['Présentiel','Remote','Hybride'].map(m => <option key={m}>{m}</option>)}
+          </select>
+          <DownIcon />
+        </FieldWrapper>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <FieldWrapper label="Experience required" icon={<Clock className="w-4 h-4" />}>
+          <select value={d.experience} onChange={ch('experience')} className={selectCls()}>
+            <option value="">Select</option>
+            {['Débutant (0–1 an)','1–3 ans','3–5 ans','5–10 ans','10+ ans'].map(e => <option key={e}>{e}</option>)}
+          </select>
+          <DownIcon />
+        </FieldWrapper>
+        <FieldWrapper label="Sector / Industry" icon={<Tag className="w-4 h-4" />}>
+          <input value={d.sector} onChange={ch('sector')} placeholder="e.g., IT, BTP, Finance" className={inputCls()} />
+        </FieldWrapper>
+      </div>
+    </div>
+  );
+};
+
+const StepServiceDetails: React.FC<{
+  d: ServiceDetails;
+  set: (k: keyof ServiceDetails, v: string) => void;
+}> = ({ d, set }) => {
+  const ch = (k: keyof ServiceDetails) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => set(k, e.target.value);
+  return (
+    <div className="space-y-4">
+      <FieldWrapper label="Specialty / Trade *" icon={<Wrench className="w-4 h-4" />}>
+        <input value={d.specialty} onChange={ch('specialty')} placeholder="e.g., Plomberie, Web Design, Cours de Maths" className={inputCls()} />
+      </FieldWrapper>
+      <div className="grid grid-cols-2 gap-3">
+        <FieldWrapper label="Rate type" icon={<DollarSign className="w-4 h-4" />}>
+          <select value={d.rateType} onChange={ch('rateType')} className={selectCls()}>
+            <option value="">Select</option>
+            <option>Prix fixe</option>
+            <option>Par heure</option>
+            <option>Par jour</option>
+            <option>Par projet</option>
+            <option>Négociable</option>
+          </select>
+          <DownIcon />
+        </FieldWrapper>
+        <FieldWrapper label="Years of experience" icon={<Calendar className="w-4 h-4" />}>
+          <select value={d.yearsExp} onChange={ch('yearsExp')} className={selectCls()}>
+            <option value="">Select</option>
+            {['Moins d\'1 an','1–3 ans','3–5 ans','5–10 ans','10+ ans'].map(y => <option key={y}>{y}</option>)}
+          </select>
+          <DownIcon />
+        </FieldWrapper>
+      </div>
+      <FieldWrapper label="Availability" icon={<Clock className="w-4 h-4" />}>
+        <select value={d.availability} onChange={ch('availability')} className={selectCls()}>
+          <option value="">Select</option>
+          {['Immédiat','Week-ends uniquement','Semaine uniquement','Soirs uniquement','Flexible'].map(a => <option key={a}>{a}</option>)}
+        </select>
+        <DownIcon />
+      </FieldWrapper>
+      <FieldWrapper label="Contact phone (optional)" icon={<Phone className="w-4 h-4" />}>
+        <input type="tel" placeholder="+213 5xx xx xx xx" className={inputCls()} />
+      </FieldWrapper>
+    </div>
+  );
+};
+
+// ─── Step 4 — Photo & Description ────────────────────────────────────────────
+
+const StepPhoto: React.FC<{
+  base: BaseForm;
+  onDescChange: (v: string) => void;
+  onImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onImageClear: () => void;
+}> = ({ base, onDescChange, onImageUpload, onImageClear }) => {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const cfg = CATEGORY_CONFIG[base.category];
+
+  return (
+    <div className="space-y-5">
+      {/* Mini summary */}
+      <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 flex items-center gap-3">
+        <span className={`p-2 rounded-lg ${cfg.bg} ${cfg.text}`}>{cfg.iconSm}</span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-gray-900 truncate">
+            {base.title || 'Untitled Ad'}
+          </p>
+          <p className="text-xs text-gray-500">
+            {base.location || 'No wilaya'} ·{' '}
+            {base.price ? `${Number(base.price).toLocaleString()} ${base.priceUnit}` : 'No price'}
+          </p>
+        </div>
+      </div>
+
+      {/* Image upload */}
+      <FieldWrapper label="Cover Image" icon={<ImageIcon className="w-4 h-4" />} hint="JPG · PNG · WEBP — max 10 MB">
+        {base.image ? (
+          <div className="relative rounded-xl overflow-hidden bg-gray-100 group aspect-video">
+            <img
+              src={base.image}
+              alt="Preview"
+              className="w-full h-full object-cover"
+              onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/600x360?text=Preview'; }}
+            />
+            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+              <button
+                type="button"
+                onClick={onImageClear}
+                className="flex items-center gap-1 bg-white text-gray-800 text-xs font-semibold px-3 py-1.5 rounded-full shadow"
+              >
+                <X className="w-3 h-3" /> Remove
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className="w-full border-2 border-dashed border-gray-300 rounded-xl py-10 flex flex-col items-center gap-2 text-gray-400 hover:border-blue-400 hover:text-blue-500 transition-colors"
+          >
+            <ImageIcon className="w-8 h-8" />
+            <span className="text-sm font-medium">Click to upload a photo</span>
+            <span className="text-xs">or drag and drop</span>
+          </button>
+        )}
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={onImageUpload}
+        />
+      </FieldWrapper>
+
+      {/* Description */}
+      <div>
+        <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+          Description{' '}
+          {base.category === 'jobs' || base.category === 'services'
+            ? <span className="text-red-400">*</span>
+            : <span className="text-gray-400 font-normal">(optional)</span>}
+        </label>
+        <div className="relative">
+          <span className="absolute top-3 left-3 text-gray-400 pointer-events-none">
+            <AlignLeft className="w-4 h-4" />
+          </span>
+          <textarea
+            rows={4}
+            value={base.description}
+            onChange={(e) => onDescChange(e.target.value)}
+            maxLength={1000}
+            placeholder={
+              base.category === 'auto'
+                ? 'Describe the vehicle condition, accessories, service history…'
+                : base.category === 'real-estate'
+                ? 'Describe the property, amenities, nearby transport, schools…'
+                : base.category === 'jobs'
+                ? 'Describe the role, responsibilities, required skills, and benefits…'
+                : 'Describe your service, what is included, and why clients should choose you…'
+            }
+            className="block w-full pl-10 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-900
+              placeholder-gray-400 resize-none focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 transition-all"
+          />
+          <p className="mt-1 text-xs text-gray-400 text-right">{base.description.length} / 1000</p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Initial State Constants ──────────────────────────────────────────────────
+
+const INIT_BASE: BaseForm = {
+  title: '', category: 'auto', price: '', priceUnit: 'DZD',
+  location: '', image: '', description: '',
+};
+const INIT_AUTO: AutoDetails = { brand: '', model: '', year: '', mileage: '', fuelType: '', transmission: '', color: '', condition: '' };
+const INIT_RE: RealEstateDetails = { type: '', area: '', bedrooms: '', bathrooms: '', floor: '', furnished: '' };
+const INIT_JOB: JobDetails = { company: '', jobType: '', experience: '', remote: '', sector: '' };
+const INIT_SVC: ServiceDetails = { specialty: '', rateType: '', yearsExp: '', availability: '' };
+
+const DRAFT_KEY = 'daberli_post_draft_v2';
+
+const STEP_LABELS: Record<Step, string> = { 1: 'Category', 2: 'Basic Info', 3: 'Details', 4: 'Photo & Submit' };
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
+const PostAdModal: React.FC<PostAdModalProps> = ({ isOpen, onClose, onSubmit }) => {
+  const [step, setStep] = useState<Step>(1);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+
+  const [base, setBase] = useState<BaseForm>(INIT_BASE);
+  const [autoD, setAutoD] = useState<AutoDetails>(INIT_AUTO);
+  const [reD, setReD] = useState<RealEstateDetails>(INIT_RE);
+  const [jobD, setJobD] = useState<JobDetails>(INIT_JOB);
+  const [svcD, setSvcD] = useState<ServiceDetails>(INIT_SVC);
+
+  // ── Draft restore on open ────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isOpen) return;
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const { b, a, re, j, s } = JSON.parse(raw);
+      if (b) setBase({ ...INIT_BASE, ...b, image: '' });
+      if (a) setAutoD({ ...INIT_AUTO, ...a });
+      if (re) setReD({ ...INIT_RE, ...re });
+      if (j) setJobD({ ...INIT_JOB, ...j });
+      if (s) setSvcD({ ...INIT_SVC, ...s });
+    } catch {/* ignore */ }
+  }, [isOpen]);
+
+  // ── Auto-save draft ──────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isOpen) return;
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({
+          b: { ...base, image: '' }, a: autoD, re: reD, j: jobD, s: svcD,
+        }));
+      } catch {/* ignore */ }
+    }, 800);
+    return () => clearTimeout(t);
+  }, [isOpen, base, autoD, reD, jobD, svcD]);
+
+  // ── Blob URL cleanup ─────────────────────────────────────────────────────
+  useEffect(() => {
+    const url = base.image;
+    return () => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); };
+  }, [base.image]);
+
+  // ── Escape key ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') handleClose(); };
+    if (isOpen) window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
+  const reset = useCallback(() => {
+    if (base.image.startsWith('blob:')) URL.revokeObjectURL(base.image);
+    setBase(INIT_BASE); setAutoD(INIT_AUTO); setReD(INIT_RE); setJobD(INIT_JOB); setSvcD(INIT_SVC);
+    setStep(1); setIsLoading(false); setIsSuccess(false);
+  }, [base.image]);
+
+  const handleClose = () => { onClose(); setTimeout(reset, 300); };
+
+  const handleBaseChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setBase(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (base.image.startsWith('blob:')) URL.revokeObjectURL(base.image);
+    setBase(prev => ({ ...prev, image: URL.createObjectURL(file) }));
+  };
+
+  const handleImageClear = () => {
+    if (base.image.startsWith('blob:')) URL.revokeObjectURL(base.image);
+    setBase(prev => ({ ...prev, image: '' }));
+  };
+
+  const canProceed = () => {
+    if (step === 2) return base.title.trim().length > 0 && base.location !== '';
+    return true;
+  };
+
+  const buildDetails = () => {
+    switch (base.category) {
+      case 'auto': return { ...autoD };
+      case 'real-estate': return { ...reD };
+      case 'jobs': return { ...jobD, description: base.description };
+      case 'services': return { ...svcD, description: base.description };
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!base.title.trim() || !base.location) { setStep(2); return; }
+    if (base.category === 'services' && !svcD.specialty.trim()) { setStep(3); return; }
+    setIsLoading(true);
+    setTimeout(() => {
+      onSubmit({
+        title: base.title,
+        category: base.category,
+        price: Number(base.price) || 0,
+        currency: base.priceUnit,
+        location: base.location,
+        image: base.image || 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&q=80',
+        details: buildDetails(),
+        datePosted: 'Just now',
+      });
+      localStorage.removeItem(DRAFT_KEY);
+      setIsLoading(false);
+      setIsSuccess(true);
+    }, 1400);
+  };
+
+  if (!isOpen) return null;
+
+  const cfg = CATEGORY_CONFIG[base.category];
+
+  return (
+    <div className="fixed inset-0 z-[100] overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="post-ad-title">
+      {/* Backdrop */}
+      <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={handleClose} />
+
+      <div className="flex min-h-full items-center justify-center p-4">
+        <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden">
+
+          {/* ── Header ─────────────────────────────────────────────────── */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-white">
+            <div>
+              <h3 id="post-ad-title" className="text-base font-bold text-gray-900">
+                {isSuccess ? 'Ad published!' : 'Post a New Ad'}
+              </h3>
+              {!isSuccess && (
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Step {step} / 4 — {STEP_LABELS[step]}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              aria-label="Close"
+              onClick={handleClose}
+              className="p-2 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* ── Progress strip ──────────────────────────────────────────── */}
+          {!isSuccess && (
+            <div className="px-6 pt-4 pb-1">
+              <div className="flex gap-1.5">
+                {([1, 2, 3, 4] as Step[]).map(s => (
+                  <div
+                    key={s}
+                    className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${s <= step ? cfg.bar : 'bg-gray-200'}`}
+                  />
+                ))}
+              </div>
+              <div className="flex justify-between mt-1">
+                {(['Category', 'Basic Info', 'Details', 'Photo'] as const).map((label, i) => (
+                  <span key={label} className={`text-[10px] font-medium ${i + 1 === step ? cfg.text : 'text-gray-400'}`}>
+                    {label}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Body ────────────────────────────────────────────────────── */}
+          <form onSubmit={handleSubmit}>
+            <div className="px-6 py-5 max-h-[58vh] overflow-y-auto">
+              {isSuccess ? (
+                /* ─ Success state ─ */
+                <div className="flex flex-col items-center gap-4 py-8 text-center">
+                  <div className={`w-16 h-16 rounded-full flex items-center justify-center ${cfg.bg} ${cfg.text}`}>
+                    <CheckCircle className="w-8 h-8" />
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-bold text-gray-900">Ad published successfully!</h4>
+                    <p className="text-sm text-gray-500 mt-1 max-w-xs mx-auto">
+                      Your listing is now live and visible to everyone on Daberli.
+                    </p>
+                  </div>
+                  <div className={`w-full ${cfg.bg} border ${cfg.border} rounded-xl px-4 py-3 text-sm text-left`}>
+                    <p className={`font-semibold ${cfg.text}`}>{base.title || 'Your listing'}</p>
+                    <p className="text-gray-500 text-xs mt-0.5">
+                      {base.location} · {base.price ? `${Number(base.price).toLocaleString()} ${base.priceUnit}` : 'Price not set'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleClose}
+                    className={`w-full py-2.5 rounded-xl text-sm font-bold text-white transition-colors ${cfg.btn}`}
+                  >
+                    Close
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {step === 1 && (
+                    <StepCategory
+                      selected={base.category}
+                      onSelect={cat => setBase(prev => ({ ...prev, category: cat }))}
+                    />
+                  )}
+                  {step === 2 && <StepBasic data={base} onChange={handleBaseChange} />}
+                  {step === 3 && (
+                    <>
+                      {base.category === 'auto' && <StepAutoDetails d={autoD} set={(k, v) => setAutoD(p => ({ ...p, [k]: v }))} />}
+                      {base.category === 'real-estate' && <StepRealEstateDetails d={reD} set={(k, v) => setReD(p => ({ ...p, [k]: v }))} />}
+                      {base.category === 'jobs' && <StepJobDetails d={jobD} set={(k, v) => setJobD(p => ({ ...p, [k]: v }))} />}
+                      {base.category === 'services' && <StepServiceDetails d={svcD} set={(k, v) => setSvcD(p => ({ ...p, [k]: v }))} />}
+                    </>
+                  )}
+                  {step === 4 && (
+                    <StepPhoto
+                      base={base}
+                      onDescChange={v => setBase(prev => ({ ...prev, description: v }))}
+                      onImageUpload={handleImageUpload}
+                      onImageClear={handleImageClear}
+                    />
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* ── Footer ─────────────────────────────────────────────────── */}
+            {!isSuccess && (
+              <div className="px-6 pb-5 pt-3 border-t border-gray-100 flex items-center gap-3">
+                {/* Back button */}
+                {step > 1 ? (
+                  <button
+                    type="button"
+                    onClick={() => setStep(prev => (prev - 1) as Step)}
+                    className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    Back
+                  </button>
+                ) : (
+                  <div />
+                )}
+
+                {/* Continue / Publish */}
+                {step < 4 ? (
+                  <button
+                    type="button"
+                    onClick={() => setStep(prev => (prev + 1) as Step)}
+                    disabled={!canProceed()}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white transition-colors
+                      disabled:opacity-40 disabled:cursor-not-allowed ${cfg.btn}`}
+                  >
+                    Continue <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={isLoading || !base.title.trim() || !base.location}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white transition-colors
+                      disabled:opacity-40 disabled:cursor-not-allowed ${cfg.btn}`}
+                  >
+                    {isLoading
+                      ? <><Loader2 className="w-4 h-4 animate-spin" /> Publishing…</>
+                      : <><CheckCircle className="w-4 h-4" /> Publish Ad</>}
+                  </button>
+                )}
+              </div>
+            )}
+          </form>
+
+          {/* Draft hint */}
+          {!isSuccess && (
+            <p className="text-center text-[10px] text-gray-300 pb-3 -mt-1">
+              Draft auto-saved
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default PostAdModal;
