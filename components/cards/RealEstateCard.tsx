@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Ad } from '../../types';
-import { MapPin, BedDouble, Bath, Square } from 'lucide-react';
+import { Bath, BedDouble, Camera, MapPin, Square } from 'lucide-react';
 
 interface RealEstateCardProps {
   ad: Ad;
@@ -32,6 +32,11 @@ const RealEstateCard: React.FC<RealEstateCardProps> = ({ ad }) => {
         <div className="absolute top-4 left-4 bg-emerald-600 text-white text-xs font-bold px-3 py-1 uppercase tracking-wider">
             {ad.details?.type || 'For Sale'}
         </div>
+        {ad.images && ad.images.length > 1 && (
+          <div className="absolute bottom-3 right-3 flex items-center gap-1 bg-black/60 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+            <Camera className="w-3 h-3" /> {ad.images.length}
+          </div>
+        )}
       </div>
       
       <div className="p-5 flex flex-col flex-grow">

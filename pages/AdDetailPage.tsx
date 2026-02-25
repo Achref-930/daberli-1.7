@@ -1,5 +1,6 @@
 import {
   ArrowLeft,
+  ArrowRight,
   BadgeCheck,
   Bath,
   BedDouble,
@@ -14,6 +15,7 @@ import {
   Gauge,
   Home,
   MapPin,
+  Maximize2,
   MessageSquare,
   Phone,
   Send,
@@ -23,9 +25,10 @@ import {
   Square,
   Star,
   Wrench,
+  X,
   Zap,
 } from 'lucide-react';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import { Ad, User } from '../types';
@@ -220,6 +223,121 @@ const AdDetailPage: React.FC<AdDetailPageProps> = ({
   const [applicantName, setApplicantName] = useState('');
   const [sent, setSent] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [lightbox, setLightbox] = useState<number | null>(null);
+  const [slideDir, setSlideDir] = useState<'left' | 'right' | null>(null);
+  const [showKbHints, setShowKbHints] = useState(() => !localStorage.getItem('daberli_lb_hints_seen'));
+  const [pinchScale, setPinchScale] = useState(1);
+  const [pinchOffset, setPinchOffset] = useState({ x: 0, y: 0 });
+  const touchStartX = useRef<number | null>(null);
+  const pinchStartRef = useRef<{ dist: number; scale: number; center: { x: number; y: number } } | null>(null);
+
+  // Derive gallery: prefer ad.images[], fall back to [ad.image]
+  const gallery = (ad?.images && ad.images.length > 0) ? ad.images : (ad ? [ad.image] : []);
+
+  // Lightbox navigation with slide animation
+  const goToNext = () => {
+    setSlideDir('left');
+    setTimeout(() => {
+      setLightbox(i => (i !== null ? (i + 1) % gallery.length : 0));
+      setSlideDir(null);
+    }, 150);
+  };
+  const goToPrev = () => {
+    setSlideDir('right');
+    setTimeout(() => {
+      setLightbox(i => (i !== null && i > 0 ? i - 1 : gallery.length - 1));
+      setSlideDir(null);
+    }, 150);
+  };
+  const closeLightbox = () => {
+    setLightbox(null);
+    setPinchScale(1);
+    setPinchOffset({ x: 0, y: 0 });
+  };
+
+  // Lightbox keyboard nav
+  useEffect(() => {
+    if (lightbox === null) return;
+    const h = (e: KeyboardEvent) => {
+      if (showKbHints) {
+        setShowKbHints(false);
+        localStorage.setItem('daberli_lb_hints_seen', 'true');
+      }
+      if (e.key === 'Escape')      closeLightbox();
+      if (e.key === 'ArrowLeft')   goToPrev();
+      if (e.key === 'ArrowRight')  goToNext();
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [lightbox, gallery.length, showKbHints]);
+
+  // Auto-hide keyboard hints after 3 seconds
+  useEffect(() => {
+    if (lightbox === null || !showKbHints) return;
+    const t = setTimeout(() => {
+      setShowKbHints(false);
+      localStorage.setItem('daberli_lb_hints_seen', 'true');
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [lightbox, showKbHints]);
+
+  // Reset pinch-zoom when lightbox closes or index changes
+  useEffect(() => {
+    setPinchScale(1);
+    setPinchOffset({ x: 0, y: 0 });
+  }, [lightbox]);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      // Pinch start
+      const [t1, t2] = [e.touches[0], e.touches[1]];
+      const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      pinchStartRef.current = {
+        dist,
+        scale: pinchScale,
+        center: { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 },
+      };
+    } else {
+      touchStartX.current = e.touches[0].clientX;
+    }
+  };
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && pinchStartRef.current) {
+      e.preventDefault();
+      const [t1, t2] = [e.touches[0], e.touches[1]];
+      const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      const newScale = Math.min(3, Math.max(1, pinchStartRef.current.scale * (dist / pinchStartRef.current.dist)));
+      setPinchScale(newScale);
+      if (newScale > 1) {
+        const cx = (t1.clientX + t2.clientX) / 2;
+        const cy = (t1.clientY + t2.clientY) / 2;
+        setPinchOffset({
+          x: cx - pinchStartRef.current.center.x,
+          y: cy - pinchStartRef.current.center.y,
+        });
+      } else {
+        setPinchOffset({ x: 0, y: 0 });
+      }
+    }
+  };
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (pinchStartRef.current) {
+      pinchStartRef.current = null;
+      if (pinchScale <= 1) {
+        setPinchScale(1);
+        setPinchOffset({ x: 0, y: 0 });
+      }
+      return;
+    }
+    if (touchStartX.current === null || pinchScale > 1) return;
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    if (Math.abs(dx) > 40) {
+      if (dx < 0) goToNext();
+      else        goToPrev();
+    }
+    touchStartX.current = null;
+  };
 
   // 404
   if (!ad) {
@@ -291,51 +409,93 @@ const AdDetailPage: React.FC<AdDetailPageProps> = ({
           {/* ── LEFT COLUMN (2/3) ─────────────────────────────────────────── */}
           <div className="lg:col-span-2 space-y-6">
 
-            {/* Hero Image */}
-            <div className="relative rounded-2xl overflow-hidden aspect-[16/9] bg-gray-200 shadow-sm">
-              <img src={ad.image} alt={ad.title} className="w-full h-full object-cover" />
+            {/* Hero Gallery */}
+            <div className="space-y-2">
+              {/* Main hero image */}
+              <div
+                className="relative rounded-2xl overflow-hidden aspect-[16/9] bg-gray-200 shadow-sm cursor-zoom-in group"
+                onClick={() => setLightbox(activeIdx)}
+              >
+                <img
+                  src={gallery[activeIdx] || ad.image}
+                  alt={ad.title}
+                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                />
 
-              {/* Overlays */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                {/* Gradient overlay */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
 
-              {/* Top badges */}
-              <div className="absolute top-4 left-4 flex gap-2">
-                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold text-white ${theme.bg}`}>
-                  {theme.icon} {theme.label}
-                </span>
-                {ad.isBoosted && (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-amber-400 text-amber-900">
-                    <Zap className="w-3 h-3 fill-current" /> Sponsored
+                {/* Top badges */}
+                <div className="absolute top-4 left-4 flex gap-2">
+                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold text-white ${theme.bg}`}>
+                    {theme.icon} {theme.label}
+                  </span>
+                  {ad.isBoosted && (
+                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-amber-400 text-amber-900">
+                      <Zap className="w-3 h-3 fill-current" /> Sponsored
+                    </span>
+                  )}
+                </div>
+
+                {/* Share button */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleShare(); }}
+                  className="absolute top-4 right-4 p-2 bg-white/20 backdrop-blur-sm rounded-full text-white hover:bg-white/40 transition-colors"
+                  title="Copy link"
+                >
+                  {copied ? <CheckCircle className="w-5 h-5 text-green-400" /> : <Share2 className="w-5 h-5" />}
+                </button>
+
+                {/* Expand hint */}
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                  <div className="p-3 rounded-full bg-white/20 backdrop-blur-sm">
+                    <Maximize2 className="w-6 h-6 text-white drop-shadow" />
+                  </div>
+                </div>
+
+                {/* Bottom info */}
+                <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between">
+                  <div>
+                    <p className="text-white/70 text-xs mb-1 flex items-center gap-1">
+                      <MapPin className="w-3 h-3" /> {ad.location}
+                    </p>
+                    <p className="text-white text-2xl font-bold drop-shadow-md">
+                      {ad.price > 0 ? `${ad.price.toLocaleString()} ${ad.currency}` : 'Negotiable'}
+                    </p>
+                  </div>
+                  {ad.isVerified && (
+                    <div className="flex items-center gap-1.5 bg-white/20 backdrop-blur-sm px-3 py-1.5 rounded-full">
+                      <BadgeCheck className="w-4 h-4 text-blue-300" />
+                      <span className="text-white text-xs font-semibold">Verified</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Photo count badge */}
+                {gallery.length > 1 && (
+                  <span className="absolute bottom-4 right-4 flex items-center gap-1 bg-black/60 text-white text-xs font-bold px-2.5 py-1 rounded-full">
+                    <Maximize2 className="w-3.5 h-3.5" /> {activeIdx + 1} / {gallery.length}
                   </span>
                 )}
               </div>
 
-              {/* Share button */}
-              <button
-                onClick={handleShare}
-                className="absolute top-4 right-4 p-2 bg-white/20 backdrop-blur-sm rounded-full text-white hover:bg-white/40 transition-colors"
-                title="Copy link"
-              >
-                {copied ? <CheckCircle className="w-5 h-5 text-green-400" /> : <Share2 className="w-5 h-5" />}
-              </button>
-
-              {/* Bottom info */}
-              <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between">
-                <div>
-                  <p className="text-white/70 text-xs mb-1 flex items-center gap-1">
-                    <MapPin className="w-3 h-3" /> {ad.location}
-                  </p>
-                  <p className="text-white text-2xl font-bold drop-shadow-md">
-                    {ad.price > 0 ? `${ad.price.toLocaleString()} ${ad.currency}` : 'Negotiable'}
-                  </p>
+              {/* Thumbnail filmstrip */}
+              {gallery.length > 1 && (
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {gallery.map((img, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setActiveIdx(i)}
+                      className={`flex-shrink-0 w-16 h-16 rounded-xl overflow-hidden border-2 transition-all
+                        ${i === activeIdx ? 'border-blue-500 scale-105 shadow-md' : 'border-transparent opacity-60 hover:opacity-90 hover:border-gray-300'}`}
+                      aria-label={`View photo ${i + 1}`}
+                    >
+                      <img src={img} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+                    </button>
+                  ))}
                 </div>
-                {ad.isVerified && (
-                  <div className="flex items-center gap-1.5 bg-white/20 backdrop-blur-sm px-3 py-1.5 rounded-full">
-                    <BadgeCheck className="w-4 h-4 text-blue-300" />
-                    <span className="text-white text-xs font-semibold">Verified</span>
-                  </div>
-                )}
-              </div>
+              )}
             </div>
 
             {/* Title + meta */}
@@ -547,6 +707,101 @@ const AdDetailPage: React.FC<AdDetailPageProps> = ({
           </div>
         </div>
       </div>
+      {/* Full-screen lightbox with transitions + pinch-zoom + hints */}
+      {lightbox !== null && gallery[lightbox] && (
+        <div
+          className="fixed inset-0 z-[200] bg-black/95 flex flex-col items-center justify-center"
+          onClick={() => closeLightbox()}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
+          {/* Close */}
+          <button
+            onClick={(e) => { e.stopPropagation(); closeLightbox(); }}
+            className="absolute top-4 right-4 p-2 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors z-10"
+            aria-label="Close"
+          >
+            <X className="w-5 h-5" />
+          </button>
+
+          {/* Counter */}
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white/70 text-xs font-medium">
+            {lightbox + 1} / {gallery.length}
+          </div>
+
+          {/* Arrows */}
+          {gallery.length > 1 && (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); goToPrev(); }}
+                className="absolute left-3 top-1/2 -translate-y-1/2 p-2.5 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors z-10"
+                aria-label="Previous"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); goToNext(); }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-2.5 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors z-10"
+                aria-label="Next"
+              >
+                <ArrowRight className="w-5 h-5" />
+              </button>
+            </>
+          )}
+
+          {/* Main image with slide transition and pinch-zoom */}
+          <img
+            src={gallery[lightbox]}
+            alt={ad.title}
+            className={`max-w-[88vw] max-h-[72vh] rounded-xl object-contain shadow-2xl select-none transition-all duration-150 ease-out
+              ${slideDir === 'left' ? 'opacity-0 -translate-x-8' : ''}
+              ${slideDir === 'right' ? 'opacity-0 translate-x-8' : ''}`}
+            style={{
+              transform: `scale(${pinchScale}) translate(${pinchOffset.x / pinchScale}px, ${pinchOffset.y / pinchScale}px)`,
+              touchAction: pinchScale > 1 ? 'none' : 'pan-y',
+            }}
+            onClick={(e) => e.stopPropagation()}
+            draggable={false}
+          />
+
+          {/* Pinch zoom indicator */}
+          {pinchScale > 1 && (
+            <div className="absolute top-14 left-1/2 -translate-x-1/2 bg-black/60 text-white text-xs font-medium px-2.5 py-1 rounded-full">
+              {Math.round(pinchScale * 100)}%
+            </div>
+          )}
+
+          {/* Thumbnail filmstrip */}
+          {gallery.length > 1 && (
+            <div
+              className="absolute bottom-4 left-0 right-0 flex justify-center gap-2 px-4 overflow-x-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {gallery.map((thumb, i) => (
+                <button
+                  key={i}
+                  onClick={(e) => { e.stopPropagation(); setSlideDir(i > lightbox ? 'left' : 'right'); setTimeout(() => { setLightbox(i); setSlideDir(null); }, 150); }}
+                  className={`shrink-0 w-12 h-12 rounded-lg overflow-hidden border-2 transition-all
+                    ${i === lightbox ? 'border-white scale-110 shadow-lg' : 'border-transparent opacity-50 hover:opacity-80'}`}
+                  aria-label={`Photo ${i + 1}`}
+                >
+                  <img src={thumb} alt={`Thumb ${i + 1}`} className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Keyboard hints footer */}
+          {showKbHints && (
+            <div className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-white/15 backdrop-blur-sm text-white/80 text-xs font-medium px-4 py-1.5 rounded-full flex items-center gap-3 animate-pulse">
+              <span className="flex items-center gap-1"><span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px]">←</span><span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px]">→</span> Navigate</span>
+              <span className="w-px h-3 bg-white/30" />
+              <span className="flex items-center gap-1"><span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px]">ESC</span> Close</span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

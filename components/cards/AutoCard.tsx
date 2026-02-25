@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Ad } from '../../types';
-import { MapPin, Gauge, Fuel, Car } from 'lucide-react';
+import { Camera, Car, Fuel, Gauge, MapPin } from 'lucide-react';
 
 interface AutoCardProps {
   ad: Ad;
@@ -27,6 +27,11 @@ const AutoCard: React.FC<AutoCardProps> = ({ ad }) => {
                <path fillRule="evenodd" d="M16.403 12.652a3 3 0 000-5.304 3 3 0 00-3.75-3.751 3 3 0 00-5.305 0 3 3 0 00-3.751 3.75 3 3 0 000 5.305 3 3 0 003.75 3.751 3 3 0 005.305 0 3 3 0 003.751-3.751zM11 8a1 1 0 11-2 0 1 1 0 012 0zm-1-4a1 1 0 00-1 1v3a1 1 0 002 0V5a1 1 0 00-1-1z" clipRule="evenodd" />
              </svg>
            </div>
+        )}
+        {ad.images && ad.images.length > 1 && (
+          <div className="absolute bottom-3 right-3 flex items-center gap-1 bg-black/60 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+            <Camera className="w-3 h-3" /> {ad.images.length}
+          </div>
         )}
       </div>
       

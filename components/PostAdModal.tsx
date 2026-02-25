@@ -481,58 +481,191 @@ const StepServiceDetails: React.FC<{
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_FILE_MB = 10;
 const MAX_IMAGES = 6;
+const COMPRESS_MAX_WIDTH = 1400;
+const COMPRESS_QUALITY = 0.85;
+
+// ─── Image compression utility ───────────────────────────────────────────────
+
+const compressImage = (file: File, maxWidth = COMPRESS_MAX_WIDTH, quality = COMPRESS_QUALITY): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Failed to load image'));
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { reject(new Error('Canvas context unavailable')); return; }
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve(dataUrl);
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
 
 const StepPhoto: React.FC<{
   base: BaseForm;
   onDescChange: (v: string) => void;
   onImagesChange: (updater: (prev: string[]) => string[]) => void;
 }> = ({ base, onDescChange, onImagesChange }) => {
-  const fileRef = useRef<HTMLInputElement>(null);
+  const fileRef     = useRef<HTMLInputElement>(null);
+  const touchStartX = useRef<number | null>(null);
   const [lightbox, setLightbox] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [loadingCount, setLoadingCount] = useState(0);
+  const [draggingIdx, setDraggingIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  const [slideDir, setSlideDir] = useState<'left' | 'right' | null>(null);
+  const [showKbHints, setShowKbHints] = useState(() => !localStorage.getItem('daberli_kb_hints_seen'));
+  const [pinchScale, setPinchScale] = useState(1);
+  const [pinchOffset, setPinchOffset] = useState({ x: 0, y: 0 });
+  const pinchStartRef = useRef<{ dist: number; scale: number; center: { x: number; y: number } } | null>(null);
   const cfg = CATEGORY_CONFIG[base.category];
 
-  // Lightbox keyboard navigation — capture phase so Escape doesn't also close the modal
+  // Lightbox keyboard nav — capture phase so Escape only closes lightbox, not the modal
   useEffect(() => {
     if (lightbox === null) return;
     const h = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopImmediatePropagation();
-        setLightbox(null);
+      if (showKbHints) {
+        setShowKbHints(false);
+        localStorage.setItem('daberli_kb_hints_seen', 'true');
       }
-      if (e.key === 'ArrowLeft')
-        setLightbox(i => (i !== null && i > 0 ? i - 1 : base.images.length - 1));
-      if (e.key === 'ArrowRight')
-        setLightbox(i => (i !== null ? (i + 1) % base.images.length : 0));
+      if (e.key === 'Escape') { e.stopImmediatePropagation(); closeLightbox(); }
+      if (e.key === 'ArrowLeft')  goToPrev();
+      if (e.key === 'ArrowRight') goToNext();
     };
     window.addEventListener('keydown', h, true);
     return () => window.removeEventListener('keydown', h, true);
-  }, [lightbox, base.images.length]);
+  }, [lightbox, base.images.length, showKbHints]);
 
-  const processFiles = (files: FileList | File[]) => {
+  // Auto-hide keyboard hints after 3 seconds
+  useEffect(() => {
+    if (lightbox === null || !showKbHints) return;
+    const t = setTimeout(() => {
+      setShowKbHints(false);
+      localStorage.setItem('daberli_kb_hints_seen', 'true');
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [lightbox, showKbHints]);
+
+  // Reset pinch-zoom when lightbox closes or index changes
+  useEffect(() => {
+    setPinchScale(1);
+    setPinchOffset({ x: 0, y: 0 });
+  }, [lightbox]);
+
+  // Lightbox navigation with slide animation
+  const goToNext = () => {
+    setSlideDir('left');
+    setTimeout(() => {
+      setLightbox(i => (i !== null ? (i + 1) % base.images.length : 0));
+      setSlideDir(null);
+    }, 150);
+  };
+  const goToPrev = () => {
+    setSlideDir('right');
+    setTimeout(() => {
+      setLightbox(i => (i !== null && i > 0 ? i - 1 : base.images.length - 1));
+      setSlideDir(null);
+    }, 150);
+  };
+  const closeLightbox = () => {
+    setLightbox(null);
+    setPinchScale(1);
+    setPinchOffset({ x: 0, y: 0 });
+  };
+
+  // Touch swipe for lightbox (single finger)
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      // Pinch start
+      const [t1, t2] = [e.touches[0], e.touches[1]];
+      const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      pinchStartRef.current = {
+        dist,
+        scale: pinchScale,
+        center: { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 },
+      };
+    } else {
+      touchStartX.current = e.touches[0].clientX;
+    }
+  };
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && pinchStartRef.current) {
+      e.preventDefault();
+      const [t1, t2] = [e.touches[0], e.touches[1]];
+      const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      const newScale = Math.min(3, Math.max(1, pinchStartRef.current.scale * (dist / pinchStartRef.current.dist)));
+      setPinchScale(newScale);
+      if (newScale > 1) {
+        const cx = (t1.clientX + t2.clientX) / 2;
+        const cy = (t1.clientY + t2.clientY) / 2;
+        setPinchOffset({
+          x: cx - pinchStartRef.current.center.x,
+          y: cy - pinchStartRef.current.center.y,
+        });
+      } else {
+        setPinchOffset({ x: 0, y: 0 });
+      }
+    }
+  };
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (pinchStartRef.current) {
+      pinchStartRef.current = null;
+      if (pinchScale <= 1) {
+        setPinchScale(1);
+        setPinchOffset({ x: 0, y: 0 });
+      }
+      return;
+    }
+    if (touchStartX.current === null || pinchScale > 1) return;
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    if (Math.abs(dx) > 40) {
+      if (dx < 0) goToNext();
+      else        goToPrev();
+    }
+    touchStartX.current = null;
+  };
+
+  const processFiles = async (files: FileList | File[]) => {
     setFileError(null);
     const arr = Array.from(files);
-    const remaining = MAX_IMAGES - base.images.length;
+    const remaining = MAX_IMAGES - base.images.length - loadingCount;
     if (remaining <= 0) { setFileError(`Maximum ${MAX_IMAGES} photos already reached.`); return; }
     const toProcess = arr.slice(0, remaining);
     if (arr.length > remaining)
       setFileError(`Only the first ${remaining} photo(s) were added — maximum reached.`);
-    toProcess.forEach(file => {
+
+    for (const file of toProcess) {
       if (!ACCEPTED_TYPES.includes(file.type)) {
         setFileError('Only JPG, PNG, and WEBP images are accepted.');
-        return;
+        continue;
       }
       if (file.size > MAX_FILE_MB * 1024 * 1024) {
         setFileError(`"${file.name}" exceeds the ${MAX_FILE_MB} MB limit.`);
-        return;
+        continue;
       }
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        onImagesChange(prev => [...prev, ev.target?.result as string]);
-      };
-      reader.readAsDataURL(file);
-    });
+      setLoadingCount(c => c + 1);
+      try {
+        const compressed = await compressImage(file);
+        onImagesChange(prev => [...prev, compressed]);
+      } catch {
+        setFileError(`Failed to process "${file.name}".`);
+      } finally {
+        setLoadingCount(c => c - 1);
+      }
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -540,7 +673,7 @@ const StepPhoto: React.FC<{
     e.target.value = '';
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleFileDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
     processFiles(e.dataTransfer.files);
@@ -548,16 +681,39 @@ const StepPhoto: React.FC<{
 
   const handleRemove = (idx: number) => {
     onImagesChange(prev => prev.filter((_, i) => i !== idx));
-    setLightbox(null);
+    closeLightbox();
   };
 
-  const handleSetCover = (idx: number) => {
+  // Drag-to-reorder handlers
+  const handleDragStart = (idx: number) => (e: React.DragEvent) => {
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggingIdx(idx);
+  };
+  const handleDragOver = (idx: number) => (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (draggingIdx !== null && idx !== draggingIdx) setDragOverIdx(idx);
+  };
+  const handleDragLeave = () => setDragOverIdx(null);
+  const handleReorderDrop = (targetIdx: number) => (e: React.DragEvent) => {
+    e.preventDefault();
+    if (draggingIdx === null || draggingIdx === targetIdx) {
+      setDraggingIdx(null);
+      setDragOverIdx(null);
+      return;
+    }
     onImagesChange(prev => {
       const next = [...prev];
-      const [item] = next.splice(idx, 1);
-      next.unshift(item);
+      const [item] = next.splice(draggingIdx, 1);
+      next.splice(targetIdx > draggingIdx ? targetIdx : targetIdx, 0, item);
       return next;
     });
+    setDraggingIdx(null);
+    setDragOverIdx(null);
+  };
+  const handleDragEnd = () => {
+    setDraggingIdx(null);
+    setDragOverIdx(null);
   };
 
   return (
@@ -576,7 +732,7 @@ const StepPhoto: React.FC<{
         </div>
       </div>
 
-      {/* Photos */}
+      {/* Photos — Hero + Filmstrip layout */}
       <div>
         <div className="flex items-center justify-between mb-2">
           <label className="flex items-center gap-1.5 text-sm font-semibold text-gray-700">
@@ -586,85 +742,170 @@ const StepPhoto: React.FC<{
           <span className="text-xs text-gray-400 font-medium">{base.images.length} / {MAX_IMAGES}</span>
         </div>
 
-        {/* Image grid */}
-        {base.images.length > 0 && (
-          <div className="grid grid-cols-3 gap-2 mb-3">
-            {base.images.map((img, idx) => (
-              <div
-                key={idx}
-                className="relative group aspect-video rounded-xl overflow-hidden bg-gray-100 cursor-zoom-in"
-                onClick={() => setLightbox(idx)}
-              >
-                {/* Image with subtle zoom */}
-                <img
-                  src={img}
-                  alt={`Photo ${idx + 1}`}
-                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/300x180?text=Photo'; }}
-                />
-
-                {/* Dim overlay */}
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity" />
-
-                {/* Position badge — always visible, top-left */}
-                <span className={`absolute top-1.5 left-1.5 flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-md tracking-wide pointer-events-none
-                  ${idx === 0 ? 'bg-amber-400 text-amber-900' : 'bg-black/55 text-white'}`}>
-                  {idx === 0
-                    ? <><Star className="w-2.5 h-2.5 fill-current" />&nbsp;Cover</>
-                    : `${idx + 1}`}
+        {base.images.length > 0 ? (
+          <div className="space-y-2">
+            {/* ─ Hero (cover) ─ */}
+            <div
+              className="relative rounded-xl overflow-hidden aspect-video bg-gray-100 group cursor-zoom-in"
+              onClick={() => setLightbox(0)}
+            >
+              <img
+                src={base.images[0]}
+                alt="Cover photo"
+                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/600x340?text=Photo'; }}
+              />
+              <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity" />
+              {/* Cover badge */}
+              <span className="absolute top-2.5 left-2.5 flex items-center gap-1 bg-amber-400 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full pointer-events-none">
+                <Star className="w-3 h-3 fill-current" /> Cover
+              </span>
+              {/* Photo count */}
+              {base.images.length > 1 && (
+                <span className="absolute top-2.5 right-2.5 flex items-center gap-1 bg-black/55 text-white text-[10px] font-bold px-2 py-0.5 rounded-full pointer-events-none">
+                  <ImageIcon className="w-3 h-3" /> {base.images.length}
                 </span>
+              )}
+              {/* Zoom hint */}
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                <div className="p-2.5 rounded-full bg-white/20 backdrop-blur-sm">
+                  <Maximize2 className="w-5 h-5 text-white drop-shadow" />
+                </div>
+              </div>
+              {/* Remove cover */}
+              <button
+                type="button"
+                aria-label="Remove cover photo"
+                onClick={(e) => { e.stopPropagation(); handleRemove(0); }}
+                className="absolute bottom-2.5 right-2.5 flex items-center gap-1 bg-black/60 hover:bg-red-600 text-white text-[10px] font-bold px-2 py-1 rounded-full opacity-0 group-hover:opacity-100 transition-all z-10"
+              >
+                <X className="w-3 h-3" /> Remove
+              </button>
+            </div>
 
-                {/* Remove — top-right, icon only, turns red on hover */}
-                <button
-                  type="button"
-                  aria-label="Remove photo"
-                  onClick={(e) => { e.stopPropagation(); handleRemove(idx); }}
-                  className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/50 text-white
-                    opacity-0 group-hover:opacity-100 hover:bg-red-500 transition-all duration-150 z-10"
+            {/* ─ Filmstrip (drag-to-reorder) ─ */}
+            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+              {base.images.slice(1).map((img, i) => {
+                const idx = i + 1;
+                const isDragging = draggingIdx === idx;
+                const isDropTarget = dragOverIdx === idx;
+                return (
+                  <div
+                    key={idx}
+                    draggable
+                    onDragStart={handleDragStart(idx)}
+                    onDragOver={handleDragOver(idx)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleReorderDrop(idx)}
+                    onDragEnd={handleDragEnd}
+                    className={`relative shrink-0 w-20 aspect-square rounded-lg overflow-hidden bg-gray-100 group cursor-grab active:cursor-grabbing transition-all duration-200
+                      ${isDragging ? 'opacity-50 scale-95' : ''}
+                      ${isDropTarget ? 'ring-2 ring-blue-400 ring-offset-2' : ''}`}
+                    onClick={() => setLightbox(idx)}
+                  >
+                    <img
+                      src={img}
+                      alt={`Photo ${idx + 1}`}
+                      className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-110 pointer-events-none"
+                      onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/80x80?text=Photo'; }}
+                      draggable={false}
+                    />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+                    {/* Index badge */}
+                    <span className="absolute top-1 left-1 bg-black/55 text-white text-[9px] font-bold px-1 py-0.5 rounded pointer-events-none">{idx + 1}</span>
+                    {/* Remove */}
+                    <button
+                      type="button"
+                      aria-label="Remove photo"
+                      onClick={(e) => { e.stopPropagation(); handleRemove(idx); }}
+                      className="absolute top-1 right-1 p-0.5 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 hover:bg-red-500 transition-all z-10"
+                    >
+                      <X className="w-2.5 h-2.5" />
+                    </button>
+                    {/* Drag hint */}
+                    <span className="absolute bottom-1 left-1/2 -translate-x-1/2 bg-black/60 text-white text-[8px] font-semibold px-1.5 py-0.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                      Drag to reorder
+                    </span>
+                  </div>
+                );
+              })}
+
+              {/* Loading progress rings */}
+              {loadingCount > 0 && Array.from({ length: loadingCount }).map((_, li) => (
+                <div
+                  key={`loading-${li}`}
+                  className="shrink-0 w-20 aspect-square rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center bg-gray-50"
                 >
-                  <X className="w-3 h-3" />
-                </button>
-
-                {/* Center zoom hint */}
-                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                  <div className="p-2 rounded-full bg-white/20 backdrop-blur-sm">
-                    <Maximize2 className="w-4 h-4 text-white drop-shadow" />
+                  <div className="relative w-8 h-8">
+                    <svg className="animate-spin" viewBox="0 0 36 36">
+                      <circle
+                        className="text-gray-200"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                        fill="none"
+                        cx="18"
+                        cy="18"
+                        r="14"
+                      />
+                      <circle
+                        className="text-blue-500"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                        fill="none"
+                        cx="18"
+                        cy="18"
+                        r="14"
+                        strokeDasharray="88"
+                        strokeDashoffset="66"
+                        strokeLinecap="round"
+                      />
+                    </svg>
                   </div>
                 </div>
+              ))}
 
-                {/* Set as Cover — bottom pill, only on non-cover images */}
-                {idx !== 0 && (
-                  <button
-                    type="button"
-                    aria-label="Set as cover photo"
-                    onClick={(e) => { e.stopPropagation(); handleSetCover(idx); }}
-                    className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex items-center gap-1
-                      bg-black/60 hover:bg-amber-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full
-                      opacity-0 group-hover:opacity-100 transition-all duration-150 whitespace-nowrap z-10"
-                  >
-                    <Star className="w-2.5 h-2.5" />&nbsp;Set as Cover
-                  </button>
-                )}
-              </div>
-            ))}
+              {/* + Add tile in filmstrip */}
+              {base.images.length + loadingCount < MAX_IMAGES && (
+                <div
+                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={(e) => { e.preventDefault(); setDragOver(false); processFiles(e.dataTransfer.files); }}
+                  onClick={() => fileRef.current?.click()}
+                  className={`shrink-0 w-20 aspect-square rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-1 cursor-pointer select-none transition-colors
+                    ${dragOver ? 'border-blue-400 bg-blue-50 text-blue-500' : 'border-gray-300 text-gray-400 hover:border-blue-400 hover:text-blue-500'}`}
+                >
+                  <ImageIcon className="w-4 h-4" />
+                  <span className="text-[9px] font-semibold">Add</span>
+                </div>
+              )}
+            </div>
           </div>
-        )}
-
-        {/* Drop zone */}
-        {base.images.length < MAX_IMAGES && (
+        ) : loadingCount > 0 ? (
+          /* Loading state */
+          <div className="w-full border-2 border-dashed border-blue-300 bg-blue-50 rounded-xl py-10 flex flex-col items-center gap-3">
+            <div className="relative w-12 h-12">
+              <svg className="animate-spin" viewBox="0 0 36 36">
+                <circle className="text-blue-200" stroke="currentColor" strokeWidth="4" fill="none" cx="18" cy="18" r="14" />
+                <circle className="text-blue-500" stroke="currentColor" strokeWidth="4" fill="none" cx="18" cy="18" r="14"
+                  strokeDasharray="88" strokeDashoffset="66" strokeLinecap="round" />
+              </svg>
+            </div>
+            <span className="text-sm font-medium text-blue-600">Processing {loadingCount} photo{loadingCount > 1 ? 's' : ''}…</span>
+            <span className="text-xs text-blue-400">Compressing for optimal quality</span>
+          </div>
+        ) : (
+          /* Full drop zone when no images yet */
           <div
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
-            onDrop={handleDrop}
+            onDrop={(e) => { e.preventDefault(); setDragOver(false); processFiles(e.dataTransfer.files); }}
             onClick={() => fileRef.current?.click()}
-            className={`w-full border-2 border-dashed rounded-xl py-8 flex flex-col items-center gap-2 cursor-pointer select-none transition-colors
+            className={`w-full border-2 border-dashed rounded-xl py-10 flex flex-col items-center gap-2 cursor-pointer select-none transition-colors
               ${dragOver ? 'border-blue-400 bg-blue-50 text-blue-500' : 'border-gray-300 text-gray-400 hover:border-blue-400 hover:text-blue-500'}`}
           >
-            <ImageIcon className="w-7 h-7" />
-            <span className="text-sm font-medium">
-              {base.images.length === 0 ? 'Click or drag & drop photos here' : 'Add more photos'}
-            </span>
-            <span className="text-xs">JPG · PNG · WEBP — max {MAX_FILE_MB} MB each</span>
+            <ImageIcon className="w-8 h-8" />
+            <span className="text-sm font-medium">Click or drag & drop photos here</span>
+            <span className="text-xs">JPG · PNG · WEBP — max {MAX_FILE_MB} MB each · up to {MAX_IMAGES} photos</span>
           </div>
         )}
 
@@ -717,35 +958,45 @@ const StepPhoto: React.FC<{
         </div>
       </div>
 
-      {/* Lightbox */}
+      {/* Lightbox with thumbnail filmstrip + swipe + pinch-zoom + transitions */}
       {lightbox !== null && base.images[lightbox] && (
         <div
-          className="fixed inset-0 z-[200] bg-black/92 flex items-center justify-center"
-          onClick={() => setLightbox(null)}
+          className="fixed inset-0 z-[200] bg-black/95 flex flex-col items-center justify-center"
+          onClick={() => closeLightbox()}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
         >
+          {/* Close */}
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); setLightbox(null); }}
+            onClick={(e) => { e.stopPropagation(); closeLightbox(); }}
             className="absolute top-4 right-4 p-2 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors z-10"
             aria-label="Close preview"
           >
             <X className="w-5 h-5" />
           </button>
 
+          {/* Counter */}
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white/70 text-xs font-medium">
+            {lightbox + 1} / {base.images.length}
+          </div>
+
+          {/* Prev / Next arrows */}
           {base.images.length > 1 && (
             <>
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); setLightbox(i => (i !== null && i > 0 ? i - 1 : base.images.length - 1)); }}
-                className="absolute left-4 p-2 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors z-10"
+                onClick={(e) => { e.stopPropagation(); goToPrev(); }}
+                className="absolute left-3 top-1/2 -translate-y-1/2 p-2.5 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors z-10"
                 aria-label="Previous photo"
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); setLightbox(i => (i !== null ? (i + 1) % base.images.length : 0)); }}
-                className="absolute right-4 p-2 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors z-10"
+                onClick={(e) => { e.stopPropagation(); goToNext(); }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-2.5 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors z-10"
                 aria-label="Next photo"
               >
                 <ArrowRight className="w-5 h-5" />
@@ -753,24 +1004,55 @@ const StepPhoto: React.FC<{
             </>
           )}
 
+          {/* Main image with slide transition and pinch-zoom */}
           <img
             src={base.images[lightbox]}
             alt={`Photo ${lightbox + 1}`}
-            className="max-w-[90vw] max-h-[85vh] rounded-xl object-contain shadow-2xl"
+            className={`max-w-[88vw] max-h-[72vh] rounded-xl object-contain shadow-2xl select-none transition-all duration-150 ease-out
+              ${slideDir === 'left' ? 'opacity-0 -translate-x-8' : ''}
+              ${slideDir === 'right' ? 'opacity-0 translate-x-8' : ''}`}
+            style={{
+              transform: `scale(${pinchScale}) translate(${pinchOffset.x / pinchScale}px, ${pinchOffset.y / pinchScale}px)`,
+              touchAction: pinchScale > 1 ? 'none' : 'pan-y',
+            }}
             onClick={(e) => e.stopPropagation()}
+            draggable={false}
           />
 
+          {/* Pinch zoom indicator */}
+          {pinchScale > 1 && (
+            <div className="absolute top-14 left-1/2 -translate-x-1/2 bg-black/60 text-white text-xs font-medium px-2.5 py-1 rounded-full">
+              {Math.round(pinchScale * 100)}%
+            </div>
+          )}
+
+          {/* Thumbnail filmstrip */}
           {base.images.length > 1 && (
-            <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-2">
-              {base.images.map((_, i) => (
+            <div
+              className="absolute bottom-4 left-0 right-0 flex justify-center gap-2 px-4 overflow-x-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {base.images.map((thumb, i) => (
                 <button
                   key={i}
                   type="button"
-                  onClick={(e) => { e.stopPropagation(); setLightbox(i); }}
-                  className={`w-2 h-2 rounded-full transition-colors ${i === lightbox ? 'bg-white' : 'bg-white/40 hover:bg-white/70'}`}
+                  onClick={(e) => { e.stopPropagation(); setSlideDir(i > lightbox ? 'left' : 'right'); setTimeout(() => { setLightbox(i); setSlideDir(null); }, 150); }}
+                  className={`shrink-0 w-12 h-12 rounded-lg overflow-hidden border-2 transition-all
+                    ${i === lightbox ? 'border-white scale-110 shadow-lg' : 'border-transparent opacity-50 hover:opacity-80'}`}
                   aria-label={`Go to photo ${i + 1}`}
-                />
+                >
+                  <img src={thumb} alt={`Thumb ${i + 1}`} className="w-full h-full object-cover" />
+                </button>
               ))}
+            </div>
+          )}
+
+          {/* Keyboard hints footer */}
+          {showKbHints && (
+            <div className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-white/15 backdrop-blur-sm text-white/80 text-xs font-medium px-4 py-1.5 rounded-full flex items-center gap-3 animate-pulse">
+              <span className="flex items-center gap-1"><span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px]">←</span><span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px]">→</span> Navigate</span>
+              <span className="w-px h-3 bg-white/30" />
+              <span className="flex items-center gap-1"><span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px]">ESC</span> Close</span>
             </div>
           )}
         </div>
@@ -927,7 +1209,8 @@ const PostAdModal: React.FC<PostAdModalProps> = ({ isOpen, onClose, onSubmit }) 
         price: Number(base.price) || 0,
         currency: base.priceUnit,
         location: base.location,
-        image: base.images[0], // cover = first photo
+        image: base.images[0],   // cover
+        images: [...base.images],  // full gallery
         details: buildDetails(),
         datePosted: 'Just now',
       });

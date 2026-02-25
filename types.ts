@@ -17,6 +17,7 @@ export interface Ad {
   currency: string;
   location: string; // Wilaya
   image: string;
+  images?: string[];   // all uploaded photos; images[0] === image (cover)
   isVerified: boolean;
   isBoosted?: boolean; // Admin-selected promoted ads
   rating?: number; // For Pros
