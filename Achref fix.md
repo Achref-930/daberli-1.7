@@ -5,3 +5,4 @@
 
 -AdminPage.tsx is corrupted — starts with orphaned SettingsPage code fragments containing // ...existing code... placeholders. The real AdminPage imports start mid-file. This will cause parse/render errors.
 
+4444444
