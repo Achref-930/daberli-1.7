@@ -12,11 +12,11 @@ const JobCard: React.FC<JobCardProps> = ({ ad }) => {
   const goToDetail = () => navigate(`/ad/${ad.id}`);
   return (
     <div onClick={goToDetail} className="bg-white rounded-lg border border-gray-200 hover:border-blue-400 hover:shadow-md transition-all duration-200 p-5 flex flex-col h-full relative overflow-hidden cursor-pointer">
-        { ad.isVerified && <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-blue-100 to-transparent -mr-8 -mt-8 rounded-bl-full"></div> }
+        { ad.isVerified && <div className="absolute top-0 right-0 w-16 h-16 bg-linear-to-bl from-blue-100 to-transparent -mr-8 -mt-8 rounded-bl-full"></div> }
         
         <div className="flex items-start gap-4 mb-4">
-            <div className="w-12 h-12 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center flex-shrink-0">
-                { ad.avatar ? ( <img src={ad.avatar} className="w-full h-full object-cover rounded-lg"/> ) : (<Building2 className="w-6 h-6 text-blue-600"/>) }
+            <div className="w-12 h-12 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center shrink-0">
+                <Building2 className="w-6 h-6 text-blue-600" />
             </div>
             <div>
                 <h3 className="font-bold text-lg text-slate-900 leading-tight mb-1 hover:underline cursor-pointer">{ad.title}</h3>

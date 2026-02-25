@@ -43,8 +43,3 @@ export interface Wilaya {
   name: string;
   ar_name?: string;
 }
-
-export interface NavItem {
-  label: string;
-  href: string;
-}

@@ -1,7 +1,12 @@
 import { Briefcase, Search } from 'lucide-react';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import Footer from '../components/Footer';
+import FloatingActionBar from '../components/FloatingActionBar';
 import Navbar from '../components/Navbar';
+import SearchSuggestions from '../components/SearchSuggestions';
 import JobCard from '../components/cards/JobCard';
+import { useSearchSuggestions } from '../hooks/useSearchSuggestions';
 import { Ad, User } from '../types';
 
 interface CategoryPageProps {
@@ -15,7 +20,19 @@ interface CategoryPageProps {
 }
 
 const JobsPage: React.FC<CategoryPageProps> = ({ user, onSignIn, onSignOut, onPostAdClick, ads, selectedWilaya, onWilayaChange }) => {
-  const jobAds = ads.filter(ad => ad.category === 'jobs' && (!selectedWilaya || ad.location === selectedWilaya));
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlQuery = searchParams.get('q') ?? '';
+  const [query, setQuery] = useState(urlQuery);
+  const [isFocused, setIsFocused] = useState(false);
+  const [suggIdx, setSuggIdx] = useState(-1);
+  useEffect(() => { setQuery(urlQuery); }, [urlQuery]);
+  const suggestions = useSearchSuggestions(query, ads, 'jobs');
+  const jobAds = ads.filter(ad =>
+    ad.category === 'jobs' &&
+    (!selectedWilaya || ad.location === selectedWilaya) &&
+    (!query || ad.title.toLowerCase().includes(query.toLowerCase()) || (ad.details?.company as string || '').toLowerCase().includes(query.toLowerCase()))
+  );
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -27,6 +44,7 @@ const JobsPage: React.FC<CategoryPageProps> = ({ user, onSignIn, onSignOut, onPo
           variant="jobs"
           selectedWilaya={selectedWilaya} 
           onWilayaChange={onWilayaChange}
+          ads={ads}
       />
       
       {/* Jobs Hero */}
@@ -47,10 +65,31 @@ const JobsPage: React.FC<CategoryPageProps> = ({ user, onSignIn, onSignOut, onPo
               <h1 className="text-4xl md:text-5xl font-bold text-white mb-4 tracking-tight">Build Your Career</h1>
               <p className="text-blue-200 text-lg mb-8 max-w-2xl mx-auto">Thousands of jobs across all industries and 58 wilayas of Algeria.</p>
 
-              <div className="bg-white p-4 rounded-lg shadow-2xl max-w-4xl mx-auto flex flex-col md:flex-row gap-4">
+              <div className="relative max-w-4xl mx-auto">
+                <div className="bg-white p-4 rounded-lg shadow-2xl flex flex-col md:flex-row gap-4">
                   <div className="flex-1 bg-gray-50 rounded px-4 border border-gray-200 flex items-center gap-2">
-                      <Search className="w-5 h-5 text-slate-400 flex-shrink-0" />
-                      <input type="text" placeholder="Job title, keywords..." className="bg-transparent w-full py-3 focus:outline-none text-gray-900" />
+                      <Search className="w-5 h-5 text-slate-400 shrink-0" />
+                      <input
+                        type="text"
+                        role="combobox"
+                        aria-autocomplete="list"
+                        aria-expanded={isFocused && suggestions.length > 0}
+                        placeholder="Job title, keywords..."
+                        value={query}
+                        onChange={(e) => { setQuery(e.target.value); setSuggIdx(-1); }}
+                        onFocus={() => setIsFocused(true)}
+                        onBlur={() => setIsFocused(false)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'ArrowDown') { e.preventDefault(); setSuggIdx(i => Math.min(i + 1, suggestions.length - 1)); }
+                          else if (e.key === 'ArrowUp') { e.preventDefault(); setSuggIdx(i => Math.max(i - 1, -1)); }
+                          else if (e.key === 'Escape') { setIsFocused(false); setSuggIdx(-1); }
+                          else if (e.key === 'Enter') {
+                            const term = suggIdx >= 0 && suggestions[suggIdx] ? suggestions[suggIdx].label : query.trim();
+                            if (term) { setSearchParams({ q: term }); setSuggIdx(-1); setIsFocused(false); }
+                          }
+                        }}
+                        className="bg-transparent w-full py-3 focus:outline-none text-gray-900"
+                      />
                   </div>
                   <div className="w-full md:w-48 bg-gray-50 rounded px-4 border border-gray-200">
                       <select className="bg-transparent w-full py-3 focus:outline-none text-gray-600" aria-label="Job type filter">
@@ -61,16 +100,27 @@ const JobsPage: React.FC<CategoryPageProps> = ({ user, onSignIn, onSignOut, onPo
                           <option>Freelance</option>
                       </select>
                   </div>
-                  <button className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded font-bold transition-colors">
+                  <button onClick={() => setSearchParams(query.trim() ? { q: query.trim() } : {})} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded font-bold transition-colors">
                       Find Jobs
                   </button>
+                </div>
+                {isFocused && (
+                  <SearchSuggestions
+                    suggestions={suggestions}
+                    query={query}
+                    selectedIndex={suggIdx}
+                    onSelect={(label) => { setSearchParams({ q: label }); setIsFocused(false); setSuggIdx(-1); }}
+                    onMouseDown={(e) => e.preventDefault()}
+                    className="absolute top-full left-0 right-0 mt-1.5 z-50"
+                  />
+                )}
               </div>
           </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-8 flex gap-8">
             {/* Sidebar (Optional) */}
-            <div className="hidden lg:block w-64 flex-shrink-0 space-y-6">
+            <div className="hidden lg:block w-64 shrink-0 space-y-6">
                 <div>
                    <h3 className="font-bold text-slate-900 mb-3">Job Type</h3>
                    <div className="space-y-2">
@@ -103,6 +153,12 @@ const JobsPage: React.FC<CategoryPageProps> = ({ user, onSignIn, onSignOut, onPo
                 </div>
             </div>
       </div>
+      <Footer />
+      <FloatingActionBar
+        onHome={() => navigate('/')}
+        onPostAd={onPostAdClick}
+        onProfile={() => navigate('/profile')}
+      />
     </div>
   );
 };

@@ -1,6 +1,6 @@
 import { Zap } from 'lucide-react';
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import FloatingActionBar from '../components/FloatingActionBar';
 import Footer from '../components/Footer';
 import Hero from '../components/Hero';
@@ -34,6 +34,8 @@ const HomePage: React.FC<HomePageProps> = ({
   setActiveCategory
 }) => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const searchQuery = searchParams.get('q') ?? '';
   // Only show admin-boosted ads in the featured section
   const boostedAds = ads.filter((ad) => ad.isBoosted);
 
@@ -46,10 +48,44 @@ const HomePage: React.FC<HomePageProps> = ({
         onSignIn={onSignIn}
         onSignOut={onSignOut}
         onPostAd={onPostAd}
+        ads={ads}
       />
       
       <main className="grow">
         <Hero />
+
+        {/* Cross-category search results */}
+        {searchQuery && (() => {
+          const q = searchQuery.toLowerCase();
+          const results = ads.filter(ad =>
+            ad.title.toLowerCase().includes(q) ||
+            ad.location.toLowerCase().includes(q) ||
+            ad.category.toLowerCase().includes(q)
+          );
+          return (
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">
+                    Results for &ldquo;<span className="text-blue-600">{searchQuery}</span>&rdquo;
+                  </h2>
+                  <p className="text-sm text-gray-500 mt-0.5">{results.length} listing{results.length !== 1 ? 's' : ''} found</p>
+                </div>
+                <Link to="/" className="text-sm text-blue-600 hover:underline">Clear search ×</Link>
+              </div>
+              {results.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                  {results.map(ad => <ServiceCard key={ad.id} ad={ad} />)}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-20 border-2 border-dashed border-gray-200 rounded-2xl text-center">
+                  <p className="text-gray-400 font-medium">No listings match &ldquo;{searchQuery}&rdquo;</p>
+                  <Link to="/" className="mt-3 text-sm text-blue-600 hover:underline">Browse all listings</Link>
+                </div>
+              )}
+            </div>
+          );
+        })()}
         
         {/* Boosted / Sponsored Ads Section */}
         <div id="featured-listings" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">

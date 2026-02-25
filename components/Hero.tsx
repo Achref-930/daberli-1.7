@@ -18,7 +18,7 @@ const Hero: React.FC = () => {
   }, []);
 
   return (
-    <div className="relative bg-gradient-to-br from-daberli-blue to-blue-800 py-16 sm:py-24">
+    <div className="relative bg-linear-to-br from-daberli-blue to-blue-800 py-16 sm:py-24">
       {/* Abstract Background Pattern */}
       <div className="absolute inset-0 overflow-hidden opacity-10">
         <div className="absolute inset-0 hero-dot-pattern"></div>

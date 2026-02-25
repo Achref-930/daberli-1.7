@@ -16,9 +16,11 @@ const RealEstateCard: React.FC<RealEstateCardProps> = ({ ad }) => {
         <img 
           src={ad.image} 
           alt={ad.title} 
+          loading="lazy"
+          decoding="async"
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" 
         />
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
+        <div className="absolute bottom-0 left-0 right-0 bg-linear-to-t from-black/80 to-transparent p-4">
              <div className="flex justify-between items-end text-white">
                 <div>
                    <span className="text-2xl font-bold block shadow-black drop-shadow-md">{ad.price.toLocaleString()} {ad.currency}</span>

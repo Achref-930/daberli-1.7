@@ -2,7 +2,9 @@ import { ArrowLeft, ChevronDown, List, LogOut, MapPin, Menu, MessageSquare, Plus
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { WILAYAS } from '../constants';
-import { User } from '../types';
+import { useSearchSuggestions } from '../hooks/useSearchSuggestions';
+import { Ad, Category, User } from '../types';
+import SearchSuggestions from './SearchSuggestions';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -18,11 +20,31 @@ interface NavbarProps {
   onWilayaChange?: (wilaya: string) => void;
   variant?: NavVariant;
   showBackButton?: boolean;
+  /** Pass the visible ads array to power search suggestions */
+  ads?: Ad[];
 }
+
+// Maps NavVariant to the Category used for filtering suggestions
+const VARIANT_TO_CATEGORY: Record<NavVariant, Category | 'all'> = {
+  default:       'all',
+  auto:          'auto',
+  'real-estate': 'real-estate',
+  jobs:          'jobs',
+  services:      'services',
+};
 
 // ---------------------------------------------------------------------------
 // Static theme map — defined at module level, never re-created on render
 // ---------------------------------------------------------------------------
+// Route each variant maps to — used by search so Navbar never drops the user to the wrong page
+const ROUTE_MAP: Record<NavVariant, string> = {
+  default:       '/',
+  auto:          '/auto',
+  'real-estate': '/real-estate',
+  jobs:          '/jobs',
+  services:      '/services',
+};
+
 const THEMES: Record<NavVariant, { bg: string; text: string; accent: string; button: string; border: string }> = {
   default:       { bg: 'bg-white',        text: 'text-slate-900', accent: 'text-blue-600',    button: 'bg-blue-600 hover:bg-blue-700',      border: 'border-gray-200'    },
   auto:          { bg: 'bg-slate-900',    text: 'text-white',     accent: 'text-red-500',     button: 'bg-red-600 hover:bg-red-700',        border: 'border-slate-800'   },
@@ -53,6 +75,7 @@ const Navbar: React.FC<NavbarProps> = ({
   onWilayaChange,
   variant = 'default',
   showBackButton = false,
+  ads = [],
 }) => {
   const navigate = useNavigate();
 
@@ -60,8 +83,16 @@ const Navbar: React.FC<NavbarProps> = ({
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
   const [isSearchOpen,       setIsSearchOpen]       = useState(false);
   const [searchQuery,        setSearchQuery]        = useState('');
+  const [suggIdx,            setSuggIdx]            = useState(-1);
   const [isWilayaOpen,       setIsWilayaOpen]       = useState(false);
   const [wilayaFilter,       setWilayaFilter]       = useState('');
+
+  // Suggestions — only computed when dropdown is open
+  const suggestions = useSearchSuggestions(
+    isSearchOpen ? searchQuery : '',
+    ads,
+    VARIANT_TO_CATEGORY[variant],
+  );
 
   const wilayaRef = useRef<HTMLDivElement>(null);
   const userRef   = useRef<HTMLDivElement>(null);
@@ -106,12 +137,33 @@ const Navbar: React.FC<NavbarProps> = ({
   }, [onWilayaChange]);
 
   const handleSearchKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && searchQuery.trim()) {
-      navigate(`/?q=${encodeURIComponent(searchQuery.trim())}`);
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSuggIdx(i => Math.min(i + 1, suggestions.length - 1));
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSuggIdx(i => Math.max(i - 1, -1));
+      return;
+    }
+    if (e.key === 'Escape') {
       setIsSearchOpen(false);
       setSearchQuery('');
+      setSuggIdx(-1);
+      return;
     }
-  }, [searchQuery, navigate]);
+    if (e.key === 'Enter') {
+      const term = suggIdx >= 0 && suggestions[suggIdx]
+        ? suggestions[suggIdx].label
+        : searchQuery.trim();
+      if (!term) return;
+      navigate(`${ROUTE_MAP[variant]}?q=${encodeURIComponent(term)}`);
+      setIsSearchOpen(false);
+      setSearchQuery('');
+      setSuggIdx(-1);
+    }
+  }, [searchQuery, suggestions, suggIdx, navigate, variant]);
 
   const toggleWilaya = useCallback(() => {
     setIsWilayaOpen((v) => !v);
@@ -249,18 +301,35 @@ const Navbar: React.FC<NavbarProps> = ({
                       <input
                         autoFocus
                         type="text"
+                        role="combobox"
+                        aria-autocomplete="list"
+                        aria-expanded={suggestions.length > 0}
+                        aria-activedescendant={suggIdx >= 0 ? `nav-sugg-${suggIdx}` : undefined}
                         value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onChange={(e) => { setSearchQuery(e.target.value); setSuggIdx(-1); }}
                       placeholder="Search listings... (Enter to go)"
                           onKeyDown={handleSearchKeyDown}
                         className="bg-transparent text-sm focus:outline-none w-full text-slate-900 placeholder-gray-400"
                       />
                       {searchQuery && (
-                        <button type="button" aria-label="Clear search" onClick={() => setSearchQuery('')} className="text-gray-400 hover:text-gray-600 transition-colors">
+                        <button type="button" aria-label="Clear search" onClick={() => { setSearchQuery(''); setSuggIdx(-1); }} className="text-gray-400 hover:text-gray-600 transition-colors">
                           <X className="w-3.5 h-3.5" />
                         </button>
                       )}
                     </div>
+                    <SearchSuggestions
+                      suggestions={suggestions}
+                      query={searchQuery}
+                      selectedIndex={suggIdx}
+                      onSelect={(label) => {
+                        navigate(`${ROUTE_MAP[variant]}?q=${encodeURIComponent(label)}`);
+                        setIsSearchOpen(false);
+                        setSearchQuery('');
+                        setSuggIdx(-1);
+                      }}
+                      onMouseDown={(e) => e.preventDefault()}
+                      className="mt-2"
+                    />
                   </div>
                 )}
               </div>

@@ -961,7 +961,7 @@ const StepPhoto: React.FC<{
       {/* Lightbox with thumbnail filmstrip + swipe + pinch-zoom + transitions */}
       {lightbox !== null && base.images[lightbox] && (
         <div
-          className="fixed inset-0 z-[200] bg-black/95 flex flex-col items-center justify-center"
+          className="fixed inset-0 z-200 bg-black/95 flex flex-col items-center justify-center"
           onClick={() => closeLightbox()}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
@@ -1225,7 +1225,7 @@ const PostAdModal: React.FC<PostAdModalProps> = ({ isOpen, onClose, onSubmit }) 
   const cfg = CATEGORY_CONFIG[base.category];
 
   return (
-    <div className="fixed inset-0 z-[100] overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="post-ad-title">
+    <div className="fixed inset-0 z-100 overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="post-ad-title">
       {/* Backdrop */}
       <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={handleClose} />
 

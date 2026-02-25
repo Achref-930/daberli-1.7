@@ -42,7 +42,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSignIn }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-100 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
       {/* Backdrop */}
       <div 
         className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm transition-opacity" 

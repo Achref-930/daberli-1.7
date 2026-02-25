@@ -13,7 +13,7 @@ const ServiceCard: React.FC<ServiceCardProps> = ({ ad }) => {
   return (
     <div onClick={goToDetail} className="flex flex-col bg-white rounded-2xl overflow-hidden border border-gray-100 hover:shadow-lg transition-all duration-300 cursor-pointer">
       <div className="relative h-32 bg-slate-900">
-         <img src={ad.image} className="w-full h-full object-cover opacity-60" alt="Service Cover" />
+         <img src={ad.image} className="w-full h-full object-cover opacity-60" alt="Service Cover" loading="lazy" decoding="async" />
          <div className="absolute -bottom-10 left-6">
             <img 
                src={`https://ui-avatars.com/api/?name=${ad.title}&background=random`} 

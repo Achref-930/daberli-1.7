@@ -65,8 +65,7 @@
 ---
 
 ### 1.3 Ad Cards
-
-- **Image carousel** — Allow multiple images per ad and show a dot-navigation carousel on card hover or swipe (mobile).
+Fixed- **Image carousel** — Allow multiple images per ad and show a dot-navigation carousel on card hover or swipe (mobile). 
 
 - **Save / Heart button on every card** — A small heart icon in the top-right corner of each card that saves the ad to a local favorites list. The FloatingActionBar "Saved" tab would display these.
 

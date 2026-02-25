@@ -413,7 +413,7 @@ const AdDetailPage: React.FC<AdDetailPageProps> = ({
             <div className="space-y-2">
               {/* Main hero image */}
               <div
-                className="relative rounded-2xl overflow-hidden aspect-[16/9] bg-gray-200 shadow-sm cursor-zoom-in group"
+                className="relative rounded-2xl overflow-hidden aspect-video bg-gray-200 shadow-sm cursor-zoom-in group"
                 onClick={() => setLightbox(activeIdx)}
               >
                 <img
@@ -423,7 +423,7 @@ const AdDetailPage: React.FC<AdDetailPageProps> = ({
                 />
 
                 {/* Gradient overlay */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                <div className="absolute inset-0 bg-linear-to-t from-black/60 via-transparent to-transparent" />
 
                 {/* Top badges */}
                 <div className="absolute top-4 left-4 flex gap-2">
@@ -487,7 +487,7 @@ const AdDetailPage: React.FC<AdDetailPageProps> = ({
                       key={i}
                       type="button"
                       onClick={() => setActiveIdx(i)}
-                      className={`flex-shrink-0 w-16 h-16 rounded-xl overflow-hidden border-2 transition-all
+                      className={`shrink-0 w-16 h-16 rounded-xl overflow-hidden border-2 transition-all
                         ${i === activeIdx ? 'border-blue-500 scale-105 shadow-md' : 'border-transparent opacity-60 hover:opacity-90 hover:border-gray-300'}`}
                       aria-label={`View photo ${i + 1}`}
                     >
@@ -710,7 +710,7 @@ const AdDetailPage: React.FC<AdDetailPageProps> = ({
       {/* Full-screen lightbox with transitions + pinch-zoom + hints */}
       {lightbox !== null && gallery[lightbox] && (
         <div
-          className="fixed inset-0 z-[200] bg-black/95 flex flex-col items-center justify-center"
+          className="fixed inset-0 z-200 bg-black/95 flex flex-col items-center justify-center"
           onClick={() => closeLightbox()}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}

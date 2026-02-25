@@ -4,6 +4,7 @@ import AuthModal from './components/AuthModal';
 import PostAdModal from './components/PostAdModal';
 import { MOCK_ADS } from './constants';
 import AdminPage from './pages/AdminPage';
+import NotFoundPage from './pages/NotFoundPage';
 import AdDetailPage from './pages/AdDetailPage';
 import AutoPage from './pages/AutoPage';
 import HomePage from './pages/HomePage';
@@ -58,7 +59,7 @@ const AppContent: React.FC = () => {
     const isAdmin = ADMIN_EMAILS.includes(email.toLowerCase());
 
     setUser({
-      id: 'u123',
+      id: `u_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
       name: displayName,
       email: email,
       avatar: `https://ui-avatars.com/api/?name=${displayName}&background=0D8ABC&color=fff&rounded=true&bold=true`,
@@ -159,12 +160,14 @@ const AppContent: React.FC = () => {
   });
 
   const handleSearch = (query: string, category: Category | 'all') => {
+    const q = query.trim();
     if (category !== 'all') {
-        navigate(`/${category}`);
+      navigate(`/${category}${q ? `?q=${encodeURIComponent(q)}` : ''}`);
+    } else if (q) {
+      navigate(`/?q=${encodeURIComponent(q)}`);
     } else {
-        // Simple scroll for now if staying on home
-        const resultsElement = document.getElementById('latest-listings');
-        if (resultsElement) resultsElement.scrollIntoView({ behavior: 'smooth' });
+      const el = document.getElementById('featured-listings');
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
     }
   };
 
@@ -287,6 +290,8 @@ const AppContent: React.FC = () => {
                 onWilayaChange={setSelectedWilaya}
               />
             } />
+
+            <Route path="*" element={<NotFoundPage />} />
         </Routes>
 
         <AuthModal 
