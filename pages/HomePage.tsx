@@ -1,4 +1,4 @@
-import { Zap } from 'lucide-react';
+import { Zap, Wrench, Car, Home, Briefcase } from 'lucide-react';
 import React from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import FloatingActionBar from '../components/FloatingActionBar';
@@ -6,6 +6,10 @@ import Footer from '../components/Footer';
 import Hero from '../components/Hero';
 import Navbar from '../components/Navbar';
 import ServiceCard from '../components/ServiceCard';
+import AutoCard from '../components/cards/AutoCard';
+import RealEstateCard from '../components/cards/RealEstateCard';
+import JobCard from '../components/cards/JobCard';
+import ServiceCardPro from '../components/cards/ServiceCard';
 import { Ad, Category, User } from '../types';
 
 interface HomePageProps {
@@ -38,6 +42,14 @@ const HomePage: React.FC<HomePageProps> = ({
   const searchQuery = searchParams.get('q') ?? '';
   // Only show admin-boosted ads in the featured section
   const boostedAds = ads.filter((ad) => ad.isBoosted);
+
+  // Category-organized boosted ads
+  const categorySections = [
+    { key: 'services', label: 'Services', icon: Wrench, ads: boostedAds.filter(ad => ad.category === 'services'), Card: ServiceCardPro, accent: 'bg-violet-100 text-violet-600' },
+    { key: 'auto', label: 'Vehicles', icon: Car, ads: boostedAds.filter(ad => ad.category === 'auto'), Card: AutoCard, accent: 'bg-red-100 text-red-600' },
+    { key: 'real-estate', label: 'Real Estate', icon: Home, ads: boostedAds.filter(ad => ad.category === 'real-estate'), Card: RealEstateCard, accent: 'bg-emerald-100 text-emerald-600' },
+    { key: 'jobs', label: 'Jobs', icon: Briefcase, ads: boostedAds.filter(ad => ad.category === 'jobs'), Card: JobCard, accent: 'bg-blue-100 text-blue-600' },
+  ];
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans">
@@ -102,10 +114,25 @@ const HomePage: React.FC<HomePageProps> = ({
           </div>
 
           {boostedAds.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {boostedAds.map((ad) => (
-                <ServiceCard key={ad.id} ad={ad} />
-              ))}
+            <div className="space-y-10">
+              {categorySections.map(({ key, label, icon: Icon, ads: catAds, Card, accent }) =>
+                catAds.length > 0 ? (
+                  <div key={key}>
+                    <div className="flex items-center gap-3 mb-5">
+                      <div className={`p-2 rounded-xl ${accent}`}>
+                        <Icon className="w-5 h-5" />
+                      </div>
+                      <h3 className="text-lg font-bold text-gray-800">{label}</h3>
+                      <span className="text-xs font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{catAds.length}</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {catAds.map((ad) => (
+                        <Card key={ad.id} ad={ad} />
+                      ))}
+                    </div>
+                  </div>
+                ) : null
+              )}
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-20 text-center border-2 border-dashed border-gray-200 rounded-2xl bg-gray-50">
